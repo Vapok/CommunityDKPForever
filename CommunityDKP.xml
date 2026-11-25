@@ -1,0 +1,369 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/"
+ xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+ xsi:schemaLocation="http://www.blizzard.com/wow/ui/ ..\FrameXML\UI.xsd">
+ 	<!-- Custom Highlight Template -->
+ 	<Texture name="CommunityDKPButtonHighlightTexture" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommunityDKP-Button-Highlight" alphaMode="ADD" virtual="true">
+		<TexCoords left="0" right="0.625" top="0" bottom="0.6875"/>
+	</Texture>
+	<!-- CommDKP Fonts -->
+	<FontFamily  name="CommDKPTiny" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="10"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="10" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily  name="CommDKPTinyOutline" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="10" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="10" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily  name="CommDKPSmall" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="12"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="12" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily  name="CommDKPSmallOutline" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="12" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="12" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily  name="CommDKPNormal" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="13"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="13" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily  name="CommDKPNormalOutline" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\homizio_bold.ttf" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="13" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="13" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<FontFamily name="CommDKPLargeFamily" virtual="true">
+		<Member alphabet="roman">
+			<Font font="Interface\AddOns\CommunityDKPForever\Media\Fonts\uf_font.ttf" height="24"/>
+		</Member>
+		<Member alphabet="korean">
+			<Font font="Fonts\2002.TTF" height="24" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="simplifiedchinese">
+			<Font font="Fonts\ARKai_C.ttf" height="24" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="traditionalchinese">
+			<Font font="Fonts\bHEI01B.TTF" height="24" outline="NORMAL"/>
+		</Member>
+		<Member alphabet="russian">
+			<Font font="Fonts\ARIALN.TTF" height="24" outline="NORMAL"/>
+		</Member>
+	</FontFamily>
+	<Font name="CommDKPLarge" inherits="CommDKPLargeFamily" virtual="true">
+		<Color r="0.8" g="0.65" b="0"/>
+	</Font>
+	<Font name="CommDKPTinyCenter" inherits="CommDKPTiny" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPTinyLeft" inherits="CommDKPTiny" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPTinyRight" inherits="CommDKPTiny" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPTinyOutlineCenter" inherits="CommDKPTinyOutline" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPTinyOutlineLeft" inherits="CommDKPTinyOutline" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPTinyOutlineRight" inherits="CommDKPTinyOutline" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPSmallCenter" inherits="CommDKPSmall" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPSmallLeft" inherits="CommDKPSmall" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPSmallRight" inherits="CommDKPSmall" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPSmallOutlineCenter" inherits="CommDKPSmallOutline" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPSmallOutlineLeft" inherits="CommDKPSmallOutline" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPSmallOutlineRight" inherits="CommDKPSmallOutline" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPNormalCenter" inherits="CommDKPNormal" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPNormalLeft" inherits="CommDKPNormal" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPNormalRight" inherits="CommDKPNormal" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPNormalOutlineCenter" inherits="CommDKPNormalOutline" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPNormalOutlineLeft" inherits="CommDKPNormalOutline" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPNormalOutlineRight" inherits="CommDKPNormalOutline" justifyH="RIGHT" virtual="true"/>
+	<Font name="CommDKPLargeCenter" inherits="CommDKPLarge" justifyH="CENTER" virtual="true"/>
+	<Font name="CommDKPLargeLeft" inherits="CommDKPLarge" justifyH="LEFT" virtual="true"/>
+	<Font name="CommDKPLargeRight" inherits="CommDKPLarge" justifyH="RIGHT" virtual="true"/>
+ 	<!-- Button Frame Template -->
+ 	<Button name="CommunityDKPUIPanelButtonNoTooltipTemplate" virtual="true">
+		<Size x="40" y="22"/>
+		<Layers>
+			<Layer level="BACKGROUND">
+				<Texture parentKey="Left" file="Interface\Buttons\UI-Panel-Button-Disabled-Down">
+					<Size x="12" y="22"/>
+					<Anchors>
+						<Anchor point="TOPLEFT"/>
+						<Anchor point="BOTTOMLEFT"/>
+					</Anchors>
+					<TexCoords left="0" right="0.09375" top="0" bottom="0.6875"/>
+				</Texture>
+				<Texture parentKey="Right" file="Interface\Buttons\UI-Panel-Button-Disabled-Down">
+					<Size x="12" y="22"/>
+					<Anchors>
+						<Anchor point="TOPRIGHT"/>
+						<Anchor point="BOTTOMRIGHT"/>
+					</Anchors>
+					<TexCoords left="0.53125" right="0.625" top="0" bottom="0.6875"/>
+				</Texture>
+				<Texture parentKey="Middle" file="Interface\Buttons\UI-Panel-Button-Disabled-Down">
+					<Size x="12" y="22"/>
+					<Anchors>
+						<Anchor point="TOPLEFT" relativeKey="$parent.Left" relativePoint="TOPRIGHT"/>
+						<Anchor point="BOTTOMRIGHT" relativeKey="$parent.Right" relativePoint="BOTTOMLEFT"/>
+					</Anchors>
+					<TexCoords left="0.09375" right="0.53125" top="0" bottom="0.6875"/>
+				</Texture>
+			</Layer>
+		</Layers>
+		<Scripts>
+			<OnLoad function="CommunityDKPButton_OnLoad"/>
+			<OnMouseDown function="CommunityDKPButton_OnMouseDown"/>
+			<OnMouseUp function="CommunityDKPButton_OnMouseUp"/>
+			<OnShow function="CommunityDKPButton_OnShow"/>
+			<OnDisable function="CommunityDKPButton_OnDisable"/>
+			<OnEnable function="CommunityDKPButton_OnEnable"/>
+		</Scripts>
+		<ButtonText name="$parentText" parentKey="Text"/>
+		<NormalFont style="GameFontNormal"/>
+		<HighlightFont style="GameFontHighlight"/>
+		<DisabledFont style="GameFontDisable"/>
+		<HighlightTexture inherits="CommunityDKPButtonHighlightTexture"/>
+	</Button>
+	<Button name="CommunityDKPButtonTemplate" inherits="CommunityDKPUIPanelButtonNoTooltipTemplate" virtual="true">
+		<Size>
+			<AbsDimension x="144" y="21"/>
+		</Size>
+		<NormalFont style="GameFontHighlight"/>
+		<HighlightFont style="GameFontHighlight"/>
+		<DisabledFont style="GameFontDisable"/>
+	</Button>
+	
+	<Button name="CommDKPTabButtonTemplate" motionScriptsWhileDisabled="true" virtual="true">
+        <Size>
+            <AbsDimension x="10" y="32"/>
+        </Size>
+        <Layers>
+        	<Layer level="BACKGROUND">
+        		<Texture name="$parentLeftDisabled" parentKey="LeftActive" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Active-Tab">
+        			<Size>
+        				<AbsDimension x="20" y="35"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="TOPLEFT">
+        					<Offset>
+        						<AbsDimension x="0" y="0"/>
+        					</Offset>
+        				</Anchor>
+        			</Anchors>
+					<TexCoords left="0" right="0.15625" top="0" bottom="0.546875"/>
+        		</Texture>
+				<Texture name="$parentMiddleDisabled" parentKey="MiddleActive" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Active-Tab">
+        			<Size>
+        				<AbsDimension x="88" y="35"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="LEFT" relativeTo="$parentLeftDisabled" relativePoint="RIGHT"/>
+        			</Anchors>
+					<TexCoords left="0.15625" right="0.84375" top="0" bottom="0.546875"/>
+        		</Texture>
+				<Texture name="$parentRightDisabled" parentKey="RightActive" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Active-Tab">
+        			<Size>
+        				<AbsDimension x="20" y="35"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="LEFT" relativeTo="$parentMiddleDisabled" relativePoint="RIGHT"/>
+        			</Anchors>
+					<TexCoords left="0.84375" right="1.0" top="0" bottom="0.546875"/>
+        		</Texture>
+				<Texture name="$parentLeft" parentKey="Left" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Inactive-Tab">
+        			<Size>
+        				<AbsDimension x="20" y="47"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="TOPLEFT" x="0" y="-1"/>
+        			</Anchors>
+					<TexCoords left="0" right="0.15625" top="0" bottom="1.0"/>
+        		</Texture>
+				<Texture name="$parentMiddle" parentKey="Middle" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Inactive-Tab">
+        			<Size>
+        				<AbsDimension x="88" y="47"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="LEFT" relativeTo="$parentLeft" relativePoint="RIGHT"/>
+					</Anchors>
+					<TexCoords left="0.15625" right="0.84375" top="0" bottom="1.0"/>
+        		</Texture>
+				<Texture name="$parentRight" parentKey="Right" file="Interface\AddOns\CommunityDKPForever\Media\Textures\CommDKP-Inactive-Tab">
+        			<Size>
+        				<AbsDimension x="20" y="47"/>
+        			</Size>
+        			<Anchors>
+        				<Anchor point="LEFT" relativeTo="$parentMiddle" relativePoint="RIGHT"/>
+        			</Anchors>
+					<TexCoords left="0.84375" right="1.0" top="0" bottom="1.0"/>
+        		</Texture>
+        	</Layer>
+        </Layers>
+		<!-- CDKP-006 F6-b (AD-8.3): scripts are set up in Lua (ConfigMenuTabs.lua SetTabs); no Blizzard tab-template helpers are called. -->
+		<ButtonText name="$parentText" parentKey="Text">
+			<Size>
+				<AbsDimension x="0" y="10"/>
+			</Size>
+			<Anchors>
+				<Anchor point="CENTER">
+					<Offset>
+						<AbsDimension x="0" y="2"/>
+					</Offset>
+				</Anchor>
+			</Anchors>
+		</ButtonText>
+		<NormalFont style="CommDKPSmallOutlineCenter"/>
+		<HighlightFont style="CommDKPSmallOutlineCenter"/>
+		<DisabledFont style="CommDKPSmallOutlineCenter"/>
+		<HighlightTexture name="$parentHighlightTexture" parentKey="HighlightTexture" file="Interface\PaperDollInfoFrame\UI-Character-Tab-RealHighlight" alphaMode="ADD">
+			<Anchors>
+				<Anchor point="TOPLEFT">
+					<Offset>
+						<AbsDimension x="3" y="5"/>
+					</Offset>
+				</Anchor>
+				<Anchor point="BOTTOMRIGHT">
+					<Offset>
+						<AbsDimension x="-3" y="0"/>
+					</Offset>
+				</Anchor>
+			</Anchors>
+		</HighlightTexture>
+    </Button>
+    <!-- CDKP-005 (AD-5.4): BackdropTemplate replaces the legacy XML backdrop node (unsupported since 9.0);
+         the backdrop itself is applied in Lua via CommDKP:ApplyBackdrop(slider, "Slider"). -->
+    <Slider name="CommDKPSliderTemplate" inherits="BackdropTemplate" orientation="HORIZONTAL" enableMouse="true" virtual="true">
+		<HitRectInsets>
+			<AbsInset left="0" right="0" top="-10" bottom="-10"/>
+		</HitRectInsets>
+		<ThumbTexture parentKey="Thumb" name="$parentThumb" file="Interface\AddOns\CommunityDKPForever\Media\Textures\slider-pin">
+			<Size x="16" y="16"/>
+		</ThumbTexture>
+	</Slider>
+	<Slider name="CommDKPOptionsSliderTemplate" inherits="CommDKPSliderTemplate" virtual="true">
+		<KeyValues>
+			<KeyValue key="type" value="CONTROLTYPE_SLIDER" type="global"/>
+		</KeyValues>
+		<Size x="144" y="10"/>
+		<Layers>
+			<Layer level="ARTWORK">
+				<FontString name="$parentText" parentKey="Text" inherits="GameFontHighlight">
+					<Anchors>
+						<Anchor point="BOTTOM" relativePoint="TOP"/>
+					</Anchors>
+				</FontString>
+				<FontString name="$parentLow" parentKey="Low" inherits="GameFontHighlightSmall" text="LOW">
+					<Anchors>
+						<Anchor point="TOPLEFT" relativePoint="BOTTOMLEFT">
+							<Offset>
+								<AbsDimension x="-4" y="-4"/>
+							</Offset>
+						</Anchor>
+					</Anchors>
+				</FontString>
+				<FontString name="$parentHigh" parentKey="High" inherits="GameFontHighlightSmall" text="HIGH">
+					<Anchors>
+						<Anchor point="TOPRIGHT" relativePoint="BOTTOMRIGHT">
+							<Offset>
+								<AbsDimension x="4" y="-4"/>
+							</Offset>
+						</Anchor>
+					</Anchors>
+				</FontString>
+			</Layer>
+		</Layers>
+		<Scripts>
+			<OnEnter>
+				if ( self:IsEnabled() ) then
+					if ( self.tooltipText ) then
+						GameTooltip:SetOwner(self, self.tooltipOwnerPoint or "ANCHOR_RIGHT");
+						GameTooltip:SetText(self.tooltipText, 0.25, 0.75, 0.90, 1, true);
+					end
+					if ( self.tooltipRequirement ) then
+						GameTooltip:AddLine(self.tooltipRequirement, 1.0, 1.0, 1.0, true);
+						GameTooltip:Show();
+					end
+					if ( self.tooltipWarning ) then
+						GameTooltip:AddLine(self.tooltipWarning, 1, 0, 0, 1, true);
+						GameTooltip:Show();
+					end
+				end
+			</OnEnter>
+			<OnLeave>
+				GameTooltip:Hide();
+			</OnLeave>
+		</Scripts>
+	</Slider>
+</Ui>
+
+

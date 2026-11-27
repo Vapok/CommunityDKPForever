@@ -18,10 +18,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Lua 5.1 Syntax Check
+        run: |
+          sudo apt-get update && sudo apt-get install -y lua5.1
+          find . -name '*.lua' -exec luac5.1 -p {} +
+
       - name: Build Release Zip
         run: |
           mkdir -p dist/CommunityDKPForever
           rsync -a \
+            --exclude='dist' \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='.gitignore' \
@@ -30,3 +36,10 @@ jobs:
             ./ dist/CommunityDKPForever/
           cd dist
           zip -r "../CommunityDKPForever-${GITHUB_REF_NAME}.zip" CommunityDKPForever/
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CommunityDKPForever-${{ github.ref_name }}
+          path: CommunityDKPForever-${{ github.ref_name }}.zip
+          if-no-files-found: error

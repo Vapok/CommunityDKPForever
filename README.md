@@ -8,7 +8,7 @@ It works whether your guild runs one raid group or several. You can keep separat
 - **Install folder:** `World of Warcraft/_forever_/Interface/AddOns/CommunityDKPForever`
 - **Changes:** see [CHANGELOG.md](CHANGELOG.md)
 
-![Roster window](Media/Roster%20Window.png)
+![Roster window](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Roster%20Window.png)
 
 ---
 
@@ -55,15 +55,15 @@ The DKP roster is always on the left. The tabs down the right-hand side change w
 
 | Adjust DKP | Manage |
 |---|---|
-| ![Adjust DKP tab](Media/Adjust%20DKP%20Window.png) | ![Manage tab](Media/Manage%20Roster%20Window.png) |
+| ![Adjust DKP tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Adjust%20DKP%20Window.png) | ![Manage tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Manage%20Roster%20Window.png) |
 
 | Options | Item Prices |
 |---|---|
-| ![Options tab](Media/DKP%20Options.png) | ![Item Prices tab](Media/Price%20Listing.png) |
+| ![Options tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/DKP%20Options.png) | ![Item Prices tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Price%20Listing.png) |
 
 | Loot History | DKP History |
 |---|---|
-| ![Loot History tab](Media/Loot%20History%20Window.png) | ![DKP History tab](Media/DKP%20History.png) |
+| ![Loot History tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Loot%20History%20Window.png) | ![DKP History tab](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/DKP%20History.png) |
 
 ---
 
@@ -153,7 +153,7 @@ Hovering an item and pressing **Shift + Ctrl** skips the bid and opens the award
 
 ### The Officer Bidding window
 
-![Officer Bidding window](Media/Officer%20Bidding%20Window%20(with%20Bids).png)
+![Officer Bidding window](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Officer%20Bidding%20Window%20%28with%20Bids%29.png)
 
 1. Check the item and the **Boss** it came from (change it from the dropdown if needed).
 2. Check the **Minimum Bid** and **Maximum Bid**. These come from your Options tab defaults. Tick **Custom** and type a new number to set a different price for this item. The custom price is saved for next time.
@@ -166,7 +166,7 @@ Click **Clear Window** to reset the window for the next item.
 
 ### The Player Bidding window (raiders with the addon)
 
-![Player Bidding window](Media/Player%20Bidding%20Window.png)
+![Player Bidding window](https://raw.githubusercontent.com/Vapok/CommunityDKPForever/main/Media/Player%20Bidding%20Window.png)
 
 When an officer starts a bid, this window opens on its own (untick **Auto Open Bid Window** if you'd rather open it yourself with `/dkp bid`).
 

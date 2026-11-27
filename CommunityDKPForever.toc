@@ -4,6 +4,8 @@
 ## Author: Vapok-BloodsailBuccaneers
 ## Notes: Feature-rich DKP Management Tool
 ## Version: 1.0.0
+## IconTexture: Interface\AddOns\CommunityDKPForever\Media\Textures\cdkp-medallion
+## X-Curse-Project-ID: 1832318
 ## DefaultState: enabled
 ## SavedVariables: CommDKP_DB, CommDKP_Loot, CommDKP_DKPTable, CommDKP_DKPHistory, CommDKP_MinBids, CommDKP_MaxBids, CommDKP_Whitelist, CommDKP_Standby, CommDKP_Archive, CommDKP_Profiles
 

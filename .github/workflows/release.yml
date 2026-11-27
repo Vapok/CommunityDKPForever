@@ -1,0 +1,32 @@
+name: Package CommunityDKP Forever
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Release Zip
+        run: |
+          mkdir -p dist/CommunityDKPForever
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.gitignore' \
+            --exclude='.pkgmeta' \
+            --exclude='Media/*.png' \
+            ./ dist/CommunityDKPForever/
+          cd dist
+          zip -r "../CommunityDKPForever-${GITHUB_REF_NAME}.zip" CommunityDKPForever/

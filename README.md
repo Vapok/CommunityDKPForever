@@ -12,20 +12,6 @@ It works whether your guild runs one raid group or several. You can keep separat
 
 ---
 
-## Contents
-
-- [Features at a Glance](#features-at-a-glance)
-- [Setting Up Your Guild and Roster](#setting-up-your-guild-and-roster)
-- [Running a Raid](#running-a-raid)
-- [Handing Out Loot and Running Bids](#handing-out-loot-and-running-bids)
-- [How PUGs (or Anyone Without the Addon) Can Bid](#how-pugs-or-anyone-without-the-addon-can-bid)
-- [How the Standby List Works](#how-the-standby-list-works)
-- [Officer Checklist](#officer-checklist)
-- [Slash Commands](#slash-commands)
-- [Tips and Backups](#tips-and-backups)
-
----
-
 ## Features at a Glance
 
 ### Four DKP modes

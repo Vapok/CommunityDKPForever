@@ -132,7 +132,7 @@ To have DKP handed out on boss kills without anyone clicking anything:
 1. Open `/dkp modes` and go to the **Options** tab.
 2. Tick **Auto Award DKP**. Tick **Include Standby** in the same section if your bench should get it too.
 
-Once the raid has been started with **Initialize Raid**, killing a boss in Molten Core, Onyxia's Lair, Blackwing Lair, Zul'Gurub, AQ20, AQ40, Naxxramas, or one of the world bosses (Azuregos, Lord Kazzak, Emeriss, Lethon, Taerar, Ysondre) gives out the Boss Kill Bonus from your Options tab. Only the raid leader's addon gives out the award, so it won't be paid twice.
+Once the raid has been started with **Initialize Raid**, killing a boss in The Barrow Deeps, Hyjal Summit or Onyxia's Lair, or one of the world bosses (Azuregos, Lord Kazzak, Emeriss, Lethon, Ysondre, Taerar, Prince Thunderaan), gives out the Boss Kill Bonus from your Options tab. Only the raid leader's addon gives out the award, so it won't be paid twice.
 
 If a boss fight is going on, the addon holds its sync messages and sends them when the fight is over. Nothing gets lost.
 

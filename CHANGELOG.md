@@ -7,13 +7,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 This is the first release of CommunityDKP Forever, built for **World of Warcraft: Forever** (client `1.60.1`, Interface `16001`).
 
-It works for small guilds running one 20- or 40-man raid, and for large guilds running several raid teams under the same guild tag.
+It works for small guilds running one 10-, 20- or 40-player raid, and for large guilds running several raid teams under the same guild tag.
 
 ### Highlights
 
 - **Roster management for one team or many.** Run a single raid team, or set up several separate raid teams in the same guild, each with its own DKP table. Player specs and roles are picked up automatically, you can keep a standby bench, and DKP balances sync between officers and raiders.
 - **A new dark-and-gold interface.** The main window has 7 tabs: Roster, Adjust DKP, Manage, Options, Loot History, DKP History, and Item Prices. The tabs sit along the side of the window, the Roster shows a class distribution bar graph, and both the Officer and Player bidding windows have been redone.
-- **Raids, zones and world bosses for Forever.** Boss and zone support for Molten Core, Onyxia's Lair, Blackwing Lair, Zul'Gurub, Ruins of Ahn'Qiraj (AQ20), Temple of Ahn'Qiraj (AQ40), Naxxramas, and the world bosses: Azuregos, Lord Kazzak, and the four Dragons of Nightmare (Emeriss, Lethon, Taerar and Ysondre).
+- **Raids, zones and world bosses for Forever.** Boss and zone support for the Forever launch raids: The Barrow Deeps (10-player), Hyjal Summit (20-player) and Onyxia's Lair (40-player), plus the world bosses: Azuregos, Lord Kazzak, Prince Thunderaan, and the four Dragons of Nightmare (Emeriss, Lethon, Ysondre and Taerar).
 - **Several loot and bidding modes, including whisper bidding for PUGs.** Choose Minimum Bid Values, Static Item Values, Roll-Based Bidding, or Zero-Sum DKP. Guild members with the addon get a bidding window that pops up on its own. Players without the addon, including PUGs, can still take part by whispering `!bid`, `!dkp` and `!standby`.
 
 ### What's Included
@@ -27,8 +27,10 @@ It works for small guilds running one 20- or 40-man raid, and for large guilds r
 - Options are also available from the game's **Options -> AddOns** menu (`/dkp settings`).
 
 #### Raids and World Bosses
-- Boss lists for MC, Onyxia, BWL, ZG, AQ20, AQ40 and Naxxramas.
-- World bosses: Azuregos, Lord Kazzak, Emeriss, Lethon, Taerar and Ysondre.
+- The Barrow Deeps (8 bosses): Deepscar Matriarch, Elder Tangleclaw, Khalith the Dreadspinner, Well of Sorrow, Amethrax, Del'lynar Songwood, Ravus and Darlissa, Sonya Darkhallow.
+- Hyjal Summit (13 bosses): Bandalar, Ancient of Decay, Time-Lost Battalion, Sylvestris Dusksong, Old Gloomlurker, Gharalis the Abyssal, Kathris the Haunted, Anara Chillwind, Elder Minderel, Tracker Stillwind, Council of Thorns, Nythus the Dreambound, The Wild King.
+- Onyxia's Lair: Onyxia.
+- World Bosses (7): Azuregos, Lord Kazzak, Emeriss, Lethon, Ysondre, Taerar, Prince Thunderaan.
 - Optional automatic DKP awards on boss kills.
 
 #### Multiple Teams and Syncing

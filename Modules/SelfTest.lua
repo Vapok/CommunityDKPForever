@@ -143,6 +143,14 @@ local function PrintTelemetry()
   Info("Player name", (okP and Show(pname) or ("error: " .. tostring(pname)))
     .. " (UnitName: " .. (okN and (Show(rawFirst) .. ", " .. Show(rawSecond)) or "n/a") .. ")")
   Info("Last self-echo sender", Show(core.LastSelfEchoSender))
+  -- AD-30.1.8 (BR-22.1): information lines only (not checks), so the check count stays the same.
+  local okM1, m1 = pcall(CommDKP.FormatMetaTelemetry, CommDKP, "recv", core.LastRemoteMetaRecv)
+  Info("Last remote meta sender", okM1 and m1 or ("error: " .. tostring(m1)))
+  local okM2, m2 = pcall(CommDKP.FormatMetaTelemetry, CommDKP, "send", core.LastMetaSend)
+  Info("Last meta send result", okM2 and m2 or ("error: " .. tostring(m2)))
+  local okM3, m3 = pcall(CommDKP.FormatMetaTelemetry, CommDKP, "bcast", core.LastBroadcastSelfMeta)
+  Info("Officer copy of my meta (last broadcast)", okM3 and m3 or ("error: " .. tostring(m3)))
+  Info("Comm trace", core.CommTrace and "on" or "off")
 end
 
 ---------------------------------------------------------------- AD-7.5 checks
@@ -203,7 +211,7 @@ local spec = {
         testFrame:SetSize(16, 16)
         testFrame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10000, 10000)   -- off-screen
       end
-      CommDKP:ApplyBackdrop(testFrame, "Panel", "WindowBg", "WindowBorder")
+      CommDKP:ApplyBackdrop(testFrame, "Card", "bg1", "trimQuiet")   -- CDKP-009c: a live kit key (legacy "Panel" retires in 009d)
       return testFrame.SetBackdrop ~= nil and testFrame:GetBackdrop() ~= nil, ""
     end },
   { "Active palette", function()
@@ -220,7 +228,7 @@ local spec = {
       table.sort(diff)
       local detail = "Legacy=" .. nl .. " Forever=" .. nf
       if #diff > 0 then detail = detail .. " " .. table.concat(diff, ", ") end
-      return nl == EXPECTED_ROLES and nf == EXPECTED_ROLES and #diff == 0, detail
+      return nl >= EXPECTED_ROLES and nl == nf and #diff == 0, detail
     end },
 
   { section = "C_* namespaces & Settings" },

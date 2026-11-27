@@ -3,55 +3,27 @@ if GetLocale() == "zhCN" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "鲁西弗隆", "玛格曼达", "基赫纳斯",
-      "加尔", "迦顿男爵", "沙斯拉尔", "萨弗隆先驱者", 
-      "焚化者古雷曼格", "管理者埃克索图斯", "拉格纳罗斯",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "狂野的拉佐格尔", "堕落的瓦拉斯塔茲", "勒什雷尔",
-      "费尔默", "埃博诺克", "弗莱格尔", "克洛玛古斯", 
-      "奈法利安",
-    },
-    AQ = {
-      "预言者斯克拉姆", "沙尔图拉", "顽强的范克瑞斯",
-      "哈霍兰公主", "双子皇帝", "克苏恩", 
-      "异种蝎皇族", "维希度斯", "奥罗",
-    },
-    NAXX = {
-      "阿努布雷坎", "黑女巫法琳娜", "迈克斯纳",
-      "瘟疫使者诺斯", "肮脏的希尔盖", "洛欧塞布", 
-      "教官拉苏维奥斯", "收割者戈提克", "四骑士",
-      "帕奇维克", "格罗布鲁斯", "格拉斯", "塔迪乌斯",
-      "萨菲隆", "克尔苏加德",
-    },
-    ZG = {
-      "血领主曼多基尔", "加兹兰卡", "噬魂者哈卡", "高阶祭司塞卡尔", "高阶祭司温诺希斯", "高级祭祀阿罗可可",
-      "高阶祭司耶克里克", "妖术师金度", "高阶祭司玛尔里", "疯狂之缘",
-    },
-    AQ20 = {
-      "『狩猎者』阿亚米斯", "『暴食者』布鲁", "拉贾克斯将军", "库林纳克斯", "莫阿姆", "『无疤者』奥斯里安",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"奥妮克希亚"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "巴纳扎尔", "碧阿崔克丝", "兽王", "瑟莉斯塔萨", "梅森", "复生议会", "莉莉安·沃斯", "凯尔多兰",
-    },
     WORLD = {
       "艾索雷苟斯", "卡札克领主", "艾莫莉丝", "雷索", "伊索德雷", "泰拉尔",
       "桑德兰王子",  -- 3079 (AD-12.2)
     },
   }
-  -- 532, 565, 544, 548, 550, 568, 564, 580
+
   core.ZoneList = {
-    "熔火之心", 
-    "黑翼巢穴", 
-    "安其拉神庙", 
-    "纳克萨玛斯", 
-    "祖尔古鲁布", 
-    "安其拉废墟", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "奥妮克希亚的巢穴", 
     "世界老板",
-    "血色领地",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -409,6 +381,7 @@ if GetLocale() == "zhCN" then
     LOOTHISTUPDATEPROG = "战利品历史记录更新中",
     MAINGUISIZE = "主GUI大小",
     MANAGE = "管理",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "管理核心攻略列表",
     MANAGEDKP = "管理DKP列表",
     MANAGELISTS = "管理清单",
@@ -489,6 +462,7 @@ if GetLocale() == "zhCN" then
     NORANKSELECTED = "未选择等级。",
     NOROLEDETECTED = "未检测到角色",
     NOSPECREPORTED = "没有规格报告",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "不是官员。您只能在行会设置中添加具有“编辑主管注意”权限的等级。",
     NOTETOOLONG = "公会领导人的公开说明过长。注释截断以适合DKP表时间戳。 （最多31个字符）",
     NOTIFICATIONSLIKETHIS = "这样的通知现在",
@@ -687,6 +661,7 @@ if GetLocale() == "zhCN" then
     TABLEQUERYSENT = "查询公会DKP表状态",
     TABLEQUERYUTD = "最新",
     TABLESAREEMPTY = "您的表格目前为空。",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "表格检视",
     TAKINGBIDSON = "竞标",
     TANK = "罐",

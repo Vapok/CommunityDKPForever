@@ -2,20 +2,41 @@ local _, core = ...;
 local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
+local W = CommDKP.Widgets
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (ChatFrame)
+
+-- UX §12.3.5 geometry
+local OPT_CARD_W = 534                    -- 14 px lane on the right for the pane rail
+local OPT_SLOT_CARD_H = 260               -- 3 x 6 slot grid + Broadcast button
+local OPT_COL2 = 264                      -- second column offset inside a card body
+local OPT_BTN_W = math.floor((OPT_CARD_W - 6 - 2 * 12 - 3 * 8) / 4)   -- 4 equal action buttons
+local OPT_SLIDER_W, OPT_SLIDER_X, OPT_SLIDER_GAP = 200, 34, 60
+
+-- Re-skins an Options slider and moves it into its card body. The slider keeps its global "$parent..." name
+-- (created as before, so the Low/High/Text globals still resolve); only SetParent/SetWidth change.
+local function PlaceSlider(slider, body)
+  W.StyleSlider(slider)
+  slider:SetWidth(OPT_SLIDER_W)
+  slider:SetParent(body)
+end
+
+-- 17 slot boxes in 3 columns x 6 rows; the input sits at its column's right edge (label to its left).
+local function SlotGridPoint(box, body, i)
+  local col, row = math.floor((i - 1) / 6), (i - 1) % 6
+  box:SetPoint("TOPLEFT", body, "TOPLEFT", 12 + col * 172 + 172 - 54 - 12, -10 - row * 30)
+end
 local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
 local moveTimerToggle = 0;
 local validating = false
 
 local function DrawPercFrame(box)
   --Draw % signs if set to percent
-  CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box].perc = CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box]:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box].perc:SetFontObject("CommDKPNormalLeft");
+  CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box].perc = W.CreateText(CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box], "body", nil, "LEFT", "textMuted")
   CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box].perc:SetPoint("LEFT", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box], "RIGHT", -15, 0);
   CommDKP.ConfigTab4.DefaultMinBids.SlotBox[box].perc:SetText("%")
   
   if core.DB.modes.mode == "Minimum Bid Values" or (core.DB.modes.mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
-    CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box].perc = CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box]:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box].perc:SetFontObject("CommDKPNormalLeft");
+  CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box].perc = W.CreateText(CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box], "body", nil, "LEFT", "textMuted")
     CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box].perc:SetPoint("LEFT", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box], "RIGHT", -15, 0);
     CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[box].perc:SetText("%")
   end
@@ -83,32 +104,86 @@ local function SaveSettings()
   CommDKP:DKPTable_Update()
 end
 
+function CommDKP:RefreshOptionsUI()
+  -- AD-36.1.3 (BR-28.3, C-28.3): the Pricing tab follows received MinBid / MaxBid values even if Tab 4 was never built.
+  -- No argument = sort + scroll offset kept (AD-25); the redraw no-ops until Tab 7 exists.
+  if CommDKP.RefreshPriceTable then CommDKP:RefreshPriceTable() end
+  local tab4 = CommDKP.ConfigTab4
+  if not tab4 then return end
+  -- N-34.3 (AD-34.8): guarded writes; an older sender with missing keys must not raise inside a comm handler.
+  local function put(box, v) if box and v ~= nil then box:SetText(tostring(v)) end end
+  if tab4.default and tab4.default[1] and core.DB and core.DB.DKPBonus then
+    local b = core.DB.DKPBonus
+    put(tab4.default[1], b.OnTimeBonus)
+    put(tab4.default[2], b.BossKillBonus)
+    put(tab4.default[3], b.CompletionBonus)
+    put(tab4.default[4], b.NewBossKillBonus)
+    put(tab4.default[5], b.UnexcusedAbsence)
+    put(tab4.default[6], b.DecayPercentage)
+    if tonumber(b.DecayPercentage) and CommDKP.ConfigTab2 and CommDKP.ConfigTab2.decayDKP then
+      CommDKP.ConfigTab2.decayDKP:SetNumber(tonumber(b.DecayPercentage))
+    end
+    if tonumber(b.BidTimer) and tab4.bidTimerSlider then tab4.bidTimerSlider:SetValue(tonumber(b.BidTimer)) end
+    put(tab4.bidTimer, b.BidTimer)
+  end
+  local SLOTS = { "Head", "Neck", "Shoulders", "Cloak", "Chest", "Bracers", "Hands", "Belt", "Legs", "Boots", "Ring", "Trinket", "OneHanded", "TwoHanded", "OffHand", "Range", "Other" }
+  if tab4.DefaultMinBids and tab4.DefaultMinBids.SlotBox and core.DB and core.DB.MinBidBySlot then
+    for i = 1, 17 do
+      put(tab4.DefaultMinBids.SlotBox[i], core.DB.MinBidBySlot[SLOTS[i]])
+    end
+  end
+  if tab4.DefaultMaxBids and tab4.DefaultMaxBids.SlotBox and core.DB and core.DB.MaxBidBySlot then
+    for i = 1, 17 do
+      put(tab4.DefaultMaxBids.SlotBox[i], core.DB.MaxBidBySlot[SLOTS[i]])
+    end
+  end
+end
+
 function CommDKP:Options()
   local default = {}
   CommDKP.ConfigTab4.default = default;
   CommDKP:CheckOfficer()
-  CommDKP.ConfigTab4.header = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.header:SetFontObject("CommDKPLargeCenter");
-  CommDKP.ConfigTab4.header:SetPoint("TOPLEFT", CommDKP.ConfigTab4, "TOPLEFT", 15, -10);
-  CommDKP.ConfigTab4.header:SetText(L["DEFAULTSETTINGS"]);
-  CommDKP.ConfigTab4.header:SetScale(1.2)
+
+  -- UX §12.3.5: the pane is a stack of 534 px cards (the 14 px lane on the right holds the pane rail). No in-pane
+  -- heading (Q7). Only the groups that exist for this user (officer / mode) get a card, so the stack closes up.
+  local tab4 = CommDKP.ConfigTab4
+  local stackY = 0
+  local function NextCard(title, h)
+    local card = W.CreateCard(tab4, title, OPT_CARD_W, h)
+    card:SetPoint("TOPLEFT", tab4, "TOPLEFT", 0, -stackY)
+    stackY = stackY + h + W.GUT
+    return card, card.Body
+  end
+  local awardBody, minBody, maxBody
+  local function GenBody()                 -- General card: created by the first control that needs it
+    if not tab4.GeneralCard then tab4.GeneralCard = NextCard(L["CARDGENERAL"], 340) end
+    return tab4.GeneralCard.Body
+  end
+
+  -- AD-20.3.1 (CDKP-013b, BR-13.3.1): the Actions card is created first so it sits at the pane top (y = 0).
+  -- Its buttons are created further down and re-parented into it by ActionSlot(), so creation order is irrelevant.
+  local actBody
+  tab4.ActionsCard, actBody = NextCard(L["CARDACTIONS"], 71)
+  local function ActionSlot(btn, col, tone)
+    btn:SetParent(actBody)
+    btn:SetSize(OPT_BTN_W, W.H)
+    btn:ClearAllPoints()
+    btn:SetPoint("LEFT", actBody, "LEFT", W.PAD + (col - 1) * (OPT_BTN_W + W.GUT), 0)
+    W.StyleButton(btn, tone)
+  end
 
   if core.IsOfficer == true then
-    CommDKP.ConfigTab4.description = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.description:SetFontObject("CommDKPNormalLeft");
-    CommDKP.ConfigTab4.description:SetPoint("TOPLEFT", CommDKP.ConfigTab4.header, "BOTTOMLEFT", 7, -15);
-    CommDKP.ConfigTab4.description:SetText("|CFFcca600"..L["DEFAULTDKPAWARDVALUES"].."|r");
+    tab4.AwardCard, awardBody = NextCard(L["DEFAULTDKPAWARDVALUES"], 131)
+    CommDKP.ConfigTab4.description = tab4.AwardCard.Header.Title      -- legacy key: the old gold sub-heading is the card title
   
     for i=1, 6 do
-      CommDKP.ConfigTab4.default[i] = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+      CommDKP.ConfigTab4.default[i] = CreateFrame("EditBox", nil, awardBody, "BackdropTemplate")
             
       CommDKP.ConfigTab4.default[i]:SetAutoFocus(false)
       CommDKP.ConfigTab4.default[i]:SetMultiLine(false)
-      CommDKP.ConfigTab4.default[i]:SetSize(80, 24)
-      CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.default[i], "TableBorder", "InputBg", "InputBorderAccent")
+      CommDKP.ConfigTab4.default[i]:SetSize(60, W.H)
       CommDKP.ConfigTab4.default[i]:SetMaxLetters(6)
       CommDKP.ConfigTab4.default[i]:SetTextColor(1, 1, 1, 1)
-      CommDKP.ConfigTab4.default[i]:SetFontObject("CommDKPSmallRight")
       CommDKP.ConfigTab4.default[i]:SetTextInsets(10, 10, 5, 5)
       CommDKP.ConfigTab4.default[i]:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
         self:HighlightText(0,0)
@@ -149,20 +224,18 @@ function CommDKP:Options()
       CommDKP.ConfigTab4.default[i]:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
       end)
+      W.StyleEditBox(CommDKP.ConfigTab4.default[i], { numeric = true })   -- after its own SetScripts (hooks chain)
 
-      if i==1 then
-        CommDKP.ConfigTab4.default[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4, "TOPLEFT", 144, -84)
-      elseif i==4 then
-        CommDKP.ConfigTab4.default[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4.default[1], "TOPLEFT", 212, 0)
-      else
-        CommDKP.ConfigTab4.default[i]:SetPoint("TOP", CommDKP.ConfigTab4.default[i-1], "BOTTOM", 0, -22)
-      end
+      -- §12.3.5: 2 columns x 3 rows; the input sits at its column's right edge, the label to its left.
+      local col, row = (i <= 3) and 0 or 1, (i - 1) % 3
+      CommDKP.ConfigTab4.default[i]:SetPoint("TOPLEFT", awardBody, "TOPLEFT", 190 + col * 264, -10 - row * 32)
     end
 
     -- Modes Button
     CommDKP.ConfigTab4.ModesButton = self:CreateButton("TOPRIGHT", CommDKP.ConfigTab4, "TOPRIGHT", -40, -20, L["DKPMODES"]);
-    CommDKP.ConfigTab4.ModesButton:SetSize(110,25)
+    CommDKP.ConfigTab4.ModesButton:SetSize(OPT_BTN_W, W.H)
     CommDKP.ConfigTab4.ModesButton:SetScript("OnClick", function()
+      if core.IsOfficer ~= true then return end            -- AD-20.2.5 (PM-13.3): click-time officer gate
       CommDKP:ToggleDKPModesWindow()
     end);
     CommDKP.ConfigTab4.ModesButton:SetScript("OnEnter", function(self)
@@ -207,69 +280,56 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.default[6].tooltipWarning = L["DECAYPERCENTAGETTWARN"]
 
     --OnTimeBonus Header
-    CommDKP.ConfigTab4.OnTimeHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.OnTimeHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.OnTimeHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[1], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.OnTimeHeader:SetText(L["ONTIMEBONUS"]..": ")
+    CommDKP.ConfigTab4.OnTimeHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.OnTimeHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[1], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.OnTimeHeader:SetText(L["ONTIMEBONUS"])
 
     --BossKillBonus Header
-    CommDKP.ConfigTab4.BossKillHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.BossKillHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.BossKillHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[2], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.BossKillHeader:SetText(L["BOSSKILLBONUS"]..": ")
+    CommDKP.ConfigTab4.BossKillHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.BossKillHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[2], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.BossKillHeader:SetText(L["BOSSKILLBONUS"])
 
     --CompletionBonus Header
-    CommDKP.ConfigTab4.CompleteHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.CompleteHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.CompleteHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[3], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.CompleteHeader:SetText(L["RAIDCOMPLETIONBONUS"]..": ")
+    CommDKP.ConfigTab4.CompleteHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.CompleteHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[3], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.CompleteHeader:SetText(L["RAIDCOMPLETIONBONUS"])
 
     --NewBossKillBonus Header
-    CommDKP.ConfigTab4.NewBossHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.NewBossHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.NewBossHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[4], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.NewBossHeader:SetText(L["NEWBOSSKILLBONUS"]..": ")
+    CommDKP.ConfigTab4.NewBossHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.NewBossHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[4], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.NewBossHeader:SetText(L["NEWBOSSKILLBONUS"])
 
     --UnexcusedAbsence Header
-    CommDKP.ConfigTab4.UnexcusedHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.UnexcusedHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.UnexcusedHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[5], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.UnexcusedHeader:SetText(L["UNEXCUSEDABSENCE"]..": ")
+    CommDKP.ConfigTab4.UnexcusedHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.UnexcusedHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[5], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.UnexcusedHeader:SetText(L["UNEXCUSEDABSENCE"])
 
     --DKP Decay Header
-    CommDKP.ConfigTab4.DecayHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.DecayHeader:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.DecayHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[6], "LEFT", 0, 0);
-    CommDKP.ConfigTab4.DecayHeader:SetText(L["DECAYAMOUNT"]..": ")
+    CommDKP.ConfigTab4.DecayHeader = W.CreateText(awardBody, "body", nil, "RIGHT")
+    CommDKP.ConfigTab4.DecayHeader:SetPoint("RIGHT", CommDKP.ConfigTab4.default[6], "LEFT", -8, 0);
+    CommDKP.ConfigTab4.DecayHeader:SetText(L["DECAYAMOUNT"])
 
-    CommDKP.ConfigTab4.DecayFooter = CommDKP.ConfigTab4.default[6]:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.DecayFooter:SetFontObject("CommDKPSmallRight");
+    CommDKP.ConfigTab4.DecayFooter = W.CreateText(CommDKP.ConfigTab4.default[6], "body", nil, "RIGHT", "textMuted")
     CommDKP.ConfigTab4.DecayFooter:SetPoint("LEFT", CommDKP.ConfigTab4.default[6], "RIGHT", -15, -1);
     CommDKP.ConfigTab4.DecayFooter:SetText("%")
 
     -- Default Minimum Bids Container Frame
-    CommDKP.ConfigTab4.DefaultMinBids = CreateFrame("Frame", nil, CommDKP.ConfigTab4);
-    CommDKP.ConfigTab4.DefaultMinBids:SetPoint("TOPLEFT", CommDKP.ConfigTab4.default[3], "BOTTOMLEFT", -130, -52)
-    CommDKP.ConfigTab4.DefaultMinBids:SetSize(420, 410);
-
-    CommDKP.ConfigTab4.DefaultMinBids.description = CommDKP.ConfigTab4.DefaultMinBids:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.DefaultMinBids.description:SetFontObject("CommDKPSmallRight");
-    CommDKP.ConfigTab4.DefaultMinBids.description:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMinBids, "TOPLEFT", 15, 15);
+    -- DefaultMinBids IS the card (key kept); its mode-dependent description text is the card title.
+    CommDKP.ConfigTab4.DefaultMinBids, minBody = NextCard(L["DEFAULTMINBIDVALUES"], OPT_SLOT_CARD_H)
+    CommDKP.ConfigTab4.DefaultMinBids.description = CommDKP.ConfigTab4.DefaultMinBids.Header.Title
       -- DEFAULT min bids Create EditBoxes
       local SlotBox = {}
       CommDKP.ConfigTab4.DefaultMinBids.SlotBox = SlotBox;
 
       for i=1, 17 do
 
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i] = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i] = CreateFrame("EditBox", nil, minBody, "BackdropTemplate")
         
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetAutoFocus(false)
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetMultiLine(false)
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetSize(60, 24)
-        CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i], "TableBorder", "InputBg", "InputBorderAccent")
+        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetSize(54, W.H)
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetMaxLetters(6)
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetTextColor(1, 1, 1, 1)
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetFontObject("CommDKPSmallRight")
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetTextInsets(10, 10, 5, 5)
         CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
           self:HighlightText(0,0)
@@ -335,20 +395,13 @@ function CommDKP:Options()
           GameTooltip:Hide()
         end)
 
-        -- Slot Headers
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i].Header = CommDKP.ConfigTab4.DefaultMinBids:CreateFontString(nil, "OVERLAY")
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i].Header:SetFontObject("CommDKPNormalLeft");
-        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i].Header:SetPoint("RIGHT", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i], "LEFT", 0, 0);
+        W.StyleEditBox(CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i], { numeric = true })   -- after its own SetScripts
 
-        if i==1 then
-          CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMinBids, "TOPLEFT", 100, -10)
-        elseif i==9 then
-          CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[1], "TOPLEFT", 150, 0)
-        elseif i==17 then
-          CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetPoint("TOP", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[8], "BOTTOM", 0, -22)
-        else
-          CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i]:SetPoint("TOP", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i-1], "BOTTOM", 0, -22)
-        end
+        -- Slot Headers
+        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i].Header = W.CreateText(minBody, "body", nil, "RIGHT")
+        CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i].Header:SetPoint("RIGHT", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i], "LEFT", -6, 0);
+
+        SlotGridPoint(CommDKP.ConfigTab4.DefaultMinBids.SlotBox[i], minBody, i)   -- §12.3.5: 3 columns x 6 rows
       end
 
       local prefix;
@@ -471,25 +524,18 @@ function CommDKP:Options()
       -- Broadcast Minimum Bids Button
       CommDKP.ConfigTab4.BroadcastMinBids = self:CreateButton("TOP", CommDKP.ConfigTab4, "BOTTOM", 30, 30, L["BCASTVALUES"]);
       CommDKP.ConfigTab4.BroadcastMinBids:ClearAllPoints();
-      CommDKP.ConfigTab4.BroadcastMinBids:SetPoint("LEFT", CommDKP.ConfigTab4.DefaultMinBids.SlotBox[17], "RIGHT", 41, 0)
-      CommDKP.ConfigTab4.BroadcastMinBids:SetSize(110,25)
+      CommDKP.ConfigTab4.BroadcastMinBids:SetParent(minBody)
+      CommDKP.ConfigTab4.BroadcastMinBids:SetPoint("BOTTOMRIGHT", minBody, "BOTTOMRIGHT", -W.PAD, W.PAD)
+      CommDKP.ConfigTab4.BroadcastMinBids:SetSize(140, W.H)
       CommDKP.ConfigTab4.BroadcastMinBids:SetScript("OnClick", function()
+        if core.IsOfficer ~= true then return end          -- AD-20.2.5 (PM-13.3): click-time officer gate
         StaticPopupDialogs["SEND_MINBIDS"] = {
           text = L["BCASTMINBIDCONFIRM"],
           button1 = L["YES"],
           button2 = L["NO"],
           OnAccept = function()
-            local temptable = {}
-            table.insert(temptable, core.DB.MinBidBySlot)
-            local teams = CommDKP:GetGuildTeamList(true);
-            local teamTable = {}
-          
-            for k, v in pairs(teams) do
-              local teamIndex = tostring(v.index);
-              table.insert(teamTable, {teamIndex, CommDKP:GetTable(CommDKP_MinBids, true, teamIndex)});
-            end
-            table.insert(temptable, teamTable);
-            CommDKP.Sync:SendData("CommDKPMinBid", temptable)
+            SaveSettings()
+            CommDKP.Sync:SendData("CommDKPMinBid", CommDKP:BuildBidBroadcastData("min"))   -- AD-36.1.1
             CommDKP:Print(L["MINBIDVALUESSENT"])
           end,
           timeout = 0,
@@ -511,29 +557,22 @@ function CommDKP:Options()
       end)
     -- Default Maximum Bids Container Frame
     if core.DB.modes.mode == "Minimum Bid Values" or (core.DB.modes.mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
-      CommDKP.ConfigTab4.DefaultMaxBids = CreateFrame("Frame", nil, CommDKP.ConfigTab4);
-      CommDKP.ConfigTab4.DefaultMaxBids:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMinBids, "BOTTOMLEFT", 0, -52)
-      CommDKP.ConfigTab4.DefaultMaxBids:SetSize(420, 410);
-
-      CommDKP.ConfigTab4.DefaultMaxBids.description = CommDKP.ConfigTab4.DefaultMaxBids:CreateFontString(nil, "OVERLAY")
-      CommDKP.ConfigTab4.DefaultMaxBids.description:SetFontObject("CommDKPSmallRight");
-      CommDKP.ConfigTab4.DefaultMaxBids.description:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMaxBids, "TOPLEFT", 15, 15);
+      CommDKP.ConfigTab4.DefaultMaxBids, maxBody = NextCard(L["DEFAULTMAXBIDVALUES"], OPT_SLOT_CARD_H)
+      CommDKP.ConfigTab4.DefaultMaxBids.description = CommDKP.ConfigTab4.DefaultMaxBids.Header.Title
 
       -- DEFAULT Max bids Create EditBoxes
       local SlotBox = {}
       CommDKP.ConfigTab4.DefaultMaxBids.SlotBox = SlotBox;
 
       for i=1, 17 do
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i] = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i] = CreateFrame("EditBox", nil, maxBody, "BackdropTemplate")
 
         
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetAutoFocus(false)
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetMultiLine(false)
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetSize(60, 24)
-        CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i], "TableBorder", "InputBg", "InputBorderAccent")
+        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetSize(54, W.H)
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetMaxLetters(6)
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetTextColor(1, 1, 1, 1)
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetFontObject("CommDKPSmallRight")
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetTextInsets(10, 10, 5, 5)
         CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
           self:HighlightText(0,0)
@@ -600,19 +639,12 @@ function CommDKP:Options()
         end)
 
         -- Slot Headers
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i].Header = CommDKP.ConfigTab4.DefaultMaxBids:CreateFontString(nil, "OVERLAY")
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i].Header:SetFontObject("CommDKPNormalLeft");
-        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i].Header:SetPoint("RIGHT", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i], "LEFT", 0, 0);
+        W.StyleEditBox(CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i], { numeric = true })   -- after its own SetScripts
 
-        if i==1 then
-          CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMaxBids, "TOPLEFT", 100, -10)
-        elseif i==9 then
-          CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[1], "TOPLEFT", 150, 0)
-        elseif i==17 then
-          CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetPoint("TOP", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[8], "BOTTOM", 0, -22)
-        else
-          CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i]:SetPoint("TOP", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i-1], "BOTTOM", 0, -22)
-        end
+        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i].Header = W.CreateText(maxBody, "body", nil, "RIGHT")
+        CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i].Header:SetPoint("RIGHT", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i], "LEFT", -6, 0);
+
+        SlotGridPoint(CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[i], maxBody, i)   -- §12.3.5: 3 columns x 6 rows
       end
 
       local prefix;
@@ -714,25 +746,18 @@ function CommDKP:Options()
       -- Broadcast Maximum Bids Button
       CommDKP.ConfigTab4.BroadcastMaxBids = self:CreateButton("TOP", CommDKP.ConfigTab4, "BOTTOM", 30, 30, L["BCASTVALUES"]);
       CommDKP.ConfigTab4.BroadcastMaxBids:ClearAllPoints();
-      CommDKP.ConfigTab4.BroadcastMaxBids:SetPoint("LEFT", CommDKP.ConfigTab4.DefaultMaxBids.SlotBox[17], "RIGHT", 41, 0)
-      CommDKP.ConfigTab4.BroadcastMaxBids:SetSize(110,25)
+      CommDKP.ConfigTab4.BroadcastMaxBids:SetParent(maxBody)
+      CommDKP.ConfigTab4.BroadcastMaxBids:SetPoint("BOTTOMRIGHT", maxBody, "BOTTOMRIGHT", -W.PAD, W.PAD)
+      CommDKP.ConfigTab4.BroadcastMaxBids:SetSize(140, W.H)
       CommDKP.ConfigTab4.BroadcastMaxBids:SetScript("OnClick", function()
+        if core.IsOfficer ~= true then return end          -- AD-20.2.5 (PM-13.3): click-time officer gate
         StaticPopupDialogs["SEND_MAXBIDS"] = {
           text = L["BCASTMAXBIDCONFIRM"],
           button1 = L["YES"],
           button2 = L["NO"],
           OnAccept = function()
-            local temptable = {}
-            table.insert(temptable, core.DB.MaxBidBySlot)
-            local teams = CommDKP:GetGuildTeamList(true);
-            local teamTable = {}
-          
-            for k, v in pairs(teams) do
-              local teamIndex = tostring(v.index);
-              table.insert(teamTable, {teamIndex, CommDKP:GetTable(CommDKP_MaxBids, true, teamIndex)});
-            end
-            table.insert(temptable, teamTable);
-            CommDKP.Sync:SendData("CommDKPMaxBid", temptable)
+            SaveSettings()
+            CommDKP.Sync:SendData("CommDKPMaxBid", CommDKP:BuildBidBroadcastData("max"))   -- AD-36.1.1
             CommDKP:Print(L["MAXBIDVALUESSENT"])
           end,
           timeout = 0,
@@ -757,12 +782,8 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.bidTimerSlider = CreateFrame("SLIDER", "$parentBidTimerSlider", CommDKP.ConfigTab4, "CommDKPOptionsSliderTemplate");
 
     
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.bidTimerSlider, "Slider")
-  if core.DB.modes.mode == "Minimum Bid Values" or (core.DB.modes.mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
-      CommDKP.ConfigTab4.bidTimerSlider:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMaxBids, "BOTTOMLEFT", 54, -40);
-    else
-      CommDKP.ConfigTab4.bidTimerSlider:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DefaultMinBids, "BOTTOMLEFT", 54, -40);
-    end
+    PlaceSlider(CommDKP.ConfigTab4.bidTimerSlider, GenBody())
+    CommDKP.ConfigTab4.bidTimerSlider:SetPoint("TOPLEFT", GenBody(), "TOPLEFT", OPT_SLIDER_X, -28);
     CommDKP.ConfigTab4.bidTimerSlider:SetMinMaxValues(10, 90);
     CommDKP.ConfigTab4.bidTimerSlider:SetValue(core.DB.DKPBonus.BidTimer);
     CommDKP.ConfigTab4.bidTimerSlider:SetValueStep(1);
@@ -775,20 +796,17 @@ function CommDKP:Options()
       CommDKP.ConfigTab4.bidTimer:SetText(CommDKP.ConfigTab4.bidTimerSlider:GetValue())
     end)
 
-    CommDKP.ConfigTab4.bidTimerHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-    CommDKP.ConfigTab4.bidTimerHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.bidTimerHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
     CommDKP.ConfigTab4.bidTimerHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.bidTimerSlider, "TOP", 0, 3);
     CommDKP.ConfigTab4.bidTimerHeader:SetText(L["BIDTIMER"])
 
-    CommDKP.ConfigTab4.bidTimer = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.bidTimer = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
     
     CommDKP.ConfigTab4.bidTimer:SetAutoFocus(false)
     CommDKP.ConfigTab4.bidTimer:SetMultiLine(false)
-    CommDKP.ConfigTab4.bidTimer:SetSize(50, 18)
-    CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.bidTimer, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.bidTimer:SetSize(54, W.H)
     CommDKP.ConfigTab4.bidTimer:SetMaxLetters(4)
     CommDKP.ConfigTab4.bidTimer:SetTextColor(1, 1, 1, 1)
-    CommDKP.ConfigTab4.bidTimer:SetFontObject("CommDKPTinyCenter")
     CommDKP.ConfigTab4.bidTimer:SetTextInsets(10, 10, 5, 5)
     CommDKP.ConfigTab4.bidTimer:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
       self:ClearFocus()
@@ -800,6 +818,7 @@ function CommDKP:Options()
       CommDKP.ConfigTab4.bidTimerSlider:SetValue(CommDKP.ConfigTab4.bidTimer:GetNumber());
     end)
     CommDKP.ConfigTab4.bidTimer:SetPoint("TOP", CommDKP.ConfigTab4.bidTimerSlider, "BOTTOM", 0, -3)     
+    W.StyleEditBox(CommDKP.ConfigTab4.bidTimer, { numeric = true, align = "CENTER" })
     CommDKP.ConfigTab4.bidTimer:SetText(CommDKP.ConfigTab4.bidTimerSlider:GetValue())
   end -- the end
 
@@ -807,13 +826,13 @@ function CommDKP:Options()
 
   CommDKP.ConfigTab4.TooltipHistorySlider = CreateFrame("SLIDER", "$parentTooltipHistorySlider", CommDKP.ConfigTab4, "CommDKPOptionsSliderTemplate");
   if CommDKP.ConfigTab4.bidTimer then
-    CommDKP.ConfigTab4.TooltipHistorySlider:SetPoint("LEFT", CommDKP.ConfigTab4.bidTimerSlider, "RIGHT", 30, 0);
+    CommDKP.ConfigTab4.TooltipHistorySlider:SetPoint("LEFT", CommDKP.ConfigTab4.bidTimerSlider, "RIGHT", OPT_SLIDER_GAP, 0);
   else
-    CommDKP.ConfigTab4.TooltipHistorySlider:SetPoint("TOP", CommDKP.ConfigTab4, "TOP", 1, -107);
+    CommDKP.ConfigTab4.TooltipHistorySlider:SetPoint("TOPLEFT", GenBody(), "TOPLEFT", OPT_SLIDER_X, -28);
   end
 
   
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.TooltipHistorySlider, "Slider")
+  PlaceSlider(CommDKP.ConfigTab4.TooltipHistorySlider, GenBody())
   CommDKP.ConfigTab4.TooltipHistorySlider:SetMinMaxValues(5, 35);
   CommDKP.ConfigTab4.TooltipHistorySlider:SetValue(core.DB.defaults.TooltipHistoryCount);
   CommDKP.ConfigTab4.TooltipHistorySlider:SetValueStep(1);
@@ -826,20 +845,17 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.TooltipHistory:SetText(CommDKP.ConfigTab4.TooltipHistorySlider:GetValue())
   end)
 
-  CommDKP.ConfigTab4.TooltipHistoryHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.TooltipHistoryHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.TooltipHistoryHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
   CommDKP.ConfigTab4.TooltipHistoryHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.TooltipHistorySlider, "TOP", 0, 3);
   CommDKP.ConfigTab4.TooltipHistoryHeader:SetText(L["TTHISTORYCOUNT"])
 
-  CommDKP.ConfigTab4.TooltipHistory = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.TooltipHistory = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
   
   CommDKP.ConfigTab4.TooltipHistory:SetAutoFocus(false)
   CommDKP.ConfigTab4.TooltipHistory:SetMultiLine(false)
-  CommDKP.ConfigTab4.TooltipHistory:SetSize(50, 18)
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.TooltipHistory, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.TooltipHistory:SetSize(54, W.H)
   CommDKP.ConfigTab4.TooltipHistory:SetMaxLetters(4)
   CommDKP.ConfigTab4.TooltipHistory:SetTextColor(1, 1, 1, 1)
-  CommDKP.ConfigTab4.TooltipHistory:SetFontObject("CommDKPTinyCenter")
   CommDKP.ConfigTab4.TooltipHistory:SetTextInsets(10, 10, 5, 5)
   CommDKP.ConfigTab4.TooltipHistory:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
     self:ClearFocus()
@@ -851,6 +867,7 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.TooltipHistorySlider:SetValue(CommDKP.ConfigTab4.TooltipHistory:GetNumber());
   end)
   CommDKP.ConfigTab4.TooltipHistory:SetPoint("TOP", CommDKP.ConfigTab4.TooltipHistorySlider, "BOTTOM", 0, -3)     
+  W.StyleEditBox(CommDKP.ConfigTab4.TooltipHistory, { numeric = true, align = "CENTER" })
   CommDKP.ConfigTab4.TooltipHistory:SetText(CommDKP.ConfigTab4.TooltipHistorySlider:GetValue())
 
 
@@ -860,13 +877,13 @@ function CommDKP:Options()
   if CommDKP.ConfigTab4.bidTimer then
     CommDKP.ConfigTab4.historySlider:SetPoint("TOPLEFT", CommDKP.ConfigTab4.bidTimerSlider, "BOTTOMLEFT", 0, -50);
   else
-    CommDKP.ConfigTab4.historySlider:SetPoint("TOPRIGHT", CommDKP.ConfigTab4.TooltipHistorySlider, "BOTTOMLEFT", 56, -49);
+    CommDKP.ConfigTab4.historySlider:SetPoint("TOPLEFT", CommDKP.ConfigTab4.TooltipHistorySlider, "BOTTOMLEFT", 0, -50);
   end
 
   
 
   
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.historySlider, "Slider")
+  PlaceSlider(CommDKP.ConfigTab4.historySlider, GenBody())
   CommDKP.ConfigTab4.historySlider:SetMinMaxValues(100, 2500);
   CommDKP.ConfigTab4.historySlider:SetValue(core.DB.defaults.HistoryLimit);
   CommDKP.ConfigTab4.historySlider:SetValueStep(25);
@@ -880,20 +897,17 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.history:SetText(CommDKP.ConfigTab4.historySlider:GetValue())
   end)
 
-  CommDKP.ConfigTab4.HistoryHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.HistoryHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.HistoryHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
   CommDKP.ConfigTab4.HistoryHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.historySlider, "TOP", 0, 3);
   CommDKP.ConfigTab4.HistoryHeader:SetText(L["LOOTHISTORYLIMIT"])
 
-  CommDKP.ConfigTab4.history = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.history = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
  
   CommDKP.ConfigTab4.history:SetAutoFocus(false)
   CommDKP.ConfigTab4.history:SetMultiLine(false)
-  CommDKP.ConfigTab4.history:SetSize(50, 18)
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.history, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.history:SetSize(54, W.H)
   CommDKP.ConfigTab4.history:SetMaxLetters(4)
   CommDKP.ConfigTab4.history:SetTextColor(1, 1, 1, 1)
-  CommDKP.ConfigTab4.history:SetFontObject("CommDKPTinyCenter")
   CommDKP.ConfigTab4.history:SetTextInsets(10, 10, 5, 5)
   CommDKP.ConfigTab4.history:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
     self:ClearFocus()
@@ -905,14 +919,15 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.historySlider:SetValue(CommDKP.ConfigTab4.history:GetNumber());
   end)
   CommDKP.ConfigTab4.history:SetPoint("TOP", CommDKP.ConfigTab4.historySlider, "BOTTOM", 0, -3)     
+  W.StyleEditBox(CommDKP.ConfigTab4.history, { numeric = true, align = "CENTER" })
   CommDKP.ConfigTab4.history:SetText(CommDKP.ConfigTab4.historySlider:GetValue())
 
   -- DKP History Limit Slider
   CommDKP.ConfigTab4.DKPHistorySlider = CreateFrame("SLIDER", "$parentDKPHistorySlider", CommDKP.ConfigTab4, "CommDKPOptionsSliderTemplate");
 
 
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.DKPHistorySlider, "Slider")
-  CommDKP.ConfigTab4.DKPHistorySlider:SetPoint("LEFT", CommDKP.ConfigTab4.historySlider, "RIGHT", 30, 0);
+  PlaceSlider(CommDKP.ConfigTab4.DKPHistorySlider, GenBody())
+  CommDKP.ConfigTab4.DKPHistorySlider:SetPoint("LEFT", CommDKP.ConfigTab4.historySlider, "RIGHT", OPT_SLIDER_GAP, 0);
   CommDKP.ConfigTab4.DKPHistorySlider:SetMinMaxValues(100, 2500);
   CommDKP.ConfigTab4.DKPHistorySlider:SetValue(core.DB.defaults.DKPHistoryLimit);
   CommDKP.ConfigTab4.DKPHistorySlider:SetValueStep(25);
@@ -926,20 +941,17 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.DKPHistory:SetText(CommDKP.ConfigTab4.DKPHistorySlider:GetValue())
   end)
 
-  CommDKP.ConfigTab4.DKPHistoryHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.DKPHistoryHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.DKPHistoryHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
   CommDKP.ConfigTab4.DKPHistoryHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.DKPHistorySlider, "TOP", 0, 3);
   CommDKP.ConfigTab4.DKPHistoryHeader:SetText(L["DKPHISTORYLIMIT"])
 
-  CommDKP.ConfigTab4.DKPHistory = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.DKPHistory = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
   
   CommDKP.ConfigTab4.DKPHistory:SetAutoFocus(false)
   CommDKP.ConfigTab4.DKPHistory:SetMultiLine(false)
-  CommDKP.ConfigTab4.DKPHistory:SetSize(50, 18)
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.DKPHistory, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.DKPHistory:SetSize(54, W.H)
   CommDKP.ConfigTab4.DKPHistory:SetMaxLetters(4)
   CommDKP.ConfigTab4.DKPHistory:SetTextColor(1, 1, 1, 1)
-  CommDKP.ConfigTab4.DKPHistory:SetFontObject("CommDKPTinyCenter")
   CommDKP.ConfigTab4.DKPHistory:SetTextInsets(10, 10, 5, 5)
   CommDKP.ConfigTab4.DKPHistory:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
     self:ClearFocus()
@@ -951,13 +963,14 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.DKPHistorySlider:SetValue(CommDKP.ConfigTab4.history:GetNumber());
   end)
   CommDKP.ConfigTab4.DKPHistory:SetPoint("TOP", CommDKP.ConfigTab4.DKPHistorySlider, "BOTTOM", 0, -3)     
+  W.StyleEditBox(CommDKP.ConfigTab4.DKPHistory, { numeric = true, align = "CENTER" })
   CommDKP.ConfigTab4.DKPHistory:SetText(CommDKP.ConfigTab4.DKPHistorySlider:GetValue())
 
   -- Bid Timer Size Slider
   CommDKP.ConfigTab4.TimerSizeSlider = CreateFrame("SLIDER", "$parentBidTimerSizeSlider", CommDKP.ConfigTab4, "CommDKPOptionsSliderTemplate");
 
  
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.TimerSizeSlider, "Slider")
+  PlaceSlider(CommDKP.ConfigTab4.TimerSizeSlider, GenBody())
   CommDKP.ConfigTab4.TimerSizeSlider:SetPoint("TOPLEFT", CommDKP.ConfigTab4.historySlider, "BOTTOMLEFT", 0, -50);
   CommDKP.ConfigTab4.TimerSizeSlider:SetMinMaxValues(0.5, 2.0);
   CommDKP.ConfigTab4.TimerSizeSlider:SetValue(core.DB.defaults.BidTimerSize);
@@ -974,21 +987,18 @@ function CommDKP:Options()
     CommDKP.BidTimer:SetScale(core.DB.defaults.BidTimerSize);
   end)
 
-  CommDKP.ConfigTab4.DKPHistoryHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.DKPHistoryHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.DKPHistoryHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
   CommDKP.ConfigTab4.DKPHistoryHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.TimerSizeSlider, "TOP", 0, 3);
   CommDKP.ConfigTab4.DKPHistoryHeader:SetText(L["TIMERSIZE"])
 
-  CommDKP.ConfigTab4.TimerSize = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.TimerSize = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
 
   
   CommDKP.ConfigTab4.TimerSize:SetAutoFocus(false)
   CommDKP.ConfigTab4.TimerSize:SetMultiLine(false)
-  CommDKP.ConfigTab4.TimerSize:SetSize(50, 18)
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.TimerSize, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.TimerSize:SetSize(54, W.H)
   CommDKP.ConfigTab4.TimerSize:SetMaxLetters(4)
   CommDKP.ConfigTab4.TimerSize:SetTextColor(1, 1, 1, 1)
-  CommDKP.ConfigTab4.TimerSize:SetFontObject("CommDKPTinyCenter")
   CommDKP.ConfigTab4.TimerSize:SetTextInsets(10, 10, 5, 5)
   CommDKP.ConfigTab4.TimerSize:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
     self:ClearFocus()
@@ -1000,13 +1010,14 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.TimerSizeSlider:SetValue(CommDKP.ConfigTab4.TimerSize:GetNumber());
   end)
   CommDKP.ConfigTab4.TimerSize:SetPoint("TOP", CommDKP.ConfigTab4.TimerSizeSlider, "BOTTOM", 0, -3)     
+  W.StyleEditBox(CommDKP.ConfigTab4.TimerSize, { numeric = true, align = "CENTER" })
   CommDKP.ConfigTab4.TimerSize:SetText(CommDKP.ConfigTab4.TimerSizeSlider:GetValue())
 
   -- UI Scale Size Slider
   CommDKP.ConfigTab4.CommDKPScaleSize = CreateFrame("SLIDER", "$parentCommDKPScaleSizeSlider", CommDKP.ConfigTab4, "CommDKPOptionsSliderTemplate");
 
   
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.CommDKPScaleSize, "Slider")
+  PlaceSlider(CommDKP.ConfigTab4.CommDKPScaleSize, GenBody())
   CommDKP.ConfigTab4.CommDKPScaleSize:SetPoint("TOPLEFT", CommDKP.ConfigTab4.DKPHistorySlider, "BOTTOMLEFT", 0, -50);
   CommDKP.ConfigTab4.CommDKPScaleSize:SetMinMaxValues(0.5, 2.0);
   CommDKP.ConfigTab4.CommDKPScaleSize:SetValue(core.DB.defaults.CommDKPScaleSize);
@@ -1022,20 +1033,17 @@ function CommDKP:Options()
     core.DB.defaults.CommDKPScaleSize = CommDKP.ConfigTab4.CommDKPScaleSize:GetValue();
   end)
 
-  CommDKP.ConfigTab4.DKPHistoryHeader = CommDKP.ConfigTab4:CreateFontString(nil, "OVERLAY")
-  CommDKP.ConfigTab4.DKPHistoryHeader:SetFontObject("CommDKPTinyCenter");
+  CommDKP.ConfigTab4.DKPHistoryHeader = W.CreateText(GenBody(), "label", nil, "CENTER")
   CommDKP.ConfigTab4.DKPHistoryHeader:SetPoint("BOTTOM", CommDKP.ConfigTab4.CommDKPScaleSize, "TOP", 0, 3);
   CommDKP.ConfigTab4.DKPHistoryHeader:SetText(L["MAINGUISIZE"])
 
-  CommDKP.ConfigTab4.UIScaleSize = CreateFrame("EditBox", nil, CommDKP.ConfigTab4, "BackdropTemplate")
+  CommDKP.ConfigTab4.UIScaleSize = CreateFrame("EditBox", nil, GenBody(), "BackdropTemplate")
   
   CommDKP.ConfigTab4.UIScaleSize:SetAutoFocus(false)
   CommDKP.ConfigTab4.UIScaleSize:SetMultiLine(false)
-  CommDKP.ConfigTab4.UIScaleSize:SetSize(50, 18)
-  CommDKP:ApplyBackdrop(CommDKP.ConfigTab4.UIScaleSize, "TableBorder", "InputBg", "InputBorderAccent")
+  CommDKP.ConfigTab4.UIScaleSize:SetSize(54, W.H)
   CommDKP.ConfigTab4.UIScaleSize:SetMaxLetters(4)
   CommDKP.ConfigTab4.UIScaleSize:SetTextColor(1, 1, 1, 1)
-  CommDKP.ConfigTab4.UIScaleSize:SetFontObject("CommDKPTinyCenter")
   CommDKP.ConfigTab4.UIScaleSize:SetTextInsets(10, 10, 5, 5)
   CommDKP.ConfigTab4.UIScaleSize:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
     self:ClearFocus()
@@ -1047,15 +1055,14 @@ function CommDKP:Options()
     CommDKP.ConfigTab4.CommDKPScaleSize:SetValue(CommDKP.ConfigTab4.UIScaleSize:GetNumber());
   end)
   CommDKP.ConfigTab4.UIScaleSize:SetPoint("TOP", CommDKP.ConfigTab4.CommDKPScaleSize, "BOTTOM", 0, -3)     
+  W.StyleEditBox(CommDKP.ConfigTab4.UIScaleSize, { numeric = true, align = "CENTER" })
   CommDKP.ConfigTab4.UIScaleSize:SetText(CommDKP.ConfigTab4.CommDKPScaleSize:GetValue())
 
   -- Suppress Broadcast Notifications checkbox
-  CommDKP.ConfigTab4.SuppressNotifications = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
-  CommDKP.ConfigTab4.SuppressNotifications:SetPoint("TOP", CommDKP.ConfigTab4.TimerSizeSlider, "BOTTOMLEFT", 0, -35)
+  CommDKP.ConfigTab4.SuppressNotifications = W.CreateCheckbox(GenBody(), nil, "");
+  CommDKP.ConfigTab4.SuppressNotifications:SetPoint("TOPLEFT", GenBody(), "TOPLEFT", W.PAD, -214)
   CommDKP.ConfigTab4.SuppressNotifications:SetChecked(core.DB.defaults.SuppressNotifications)
-  CommDKP.ConfigTab4.SuppressNotifications:SetScale(0.8)
-  CommDKP.ConfigTab4.SuppressNotifications.text:SetText("|cff5151de"..L["SUPPRESSNOTIFICATIONS"].."|r");
-  CommDKP.ConfigTab4.SuppressNotifications.text:SetFontObject("CommDKPSmall")
+  CommDKP.ConfigTab4.SuppressNotifications.text:SetText(L["SUPPRESSNOTIFICATIONS"]);
   CommDKP.ConfigTab4.SuppressNotifications:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(L["SUPPRESSNOTIFICATIONS"], 0.25, 0.75, 0.90, 1, true)
@@ -1078,12 +1085,10 @@ function CommDKP:Options()
   end)
 
   -- Combat Logging checkbox
-  CommDKP.ConfigTab4.CombatLogging = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
-  CommDKP.ConfigTab4.CombatLogging:SetPoint("TOP", CommDKP.ConfigTab4.SuppressNotifications, "BOTTOM", 0, 0)
+  CommDKP.ConfigTab4.CombatLogging = W.CreateCheckbox(GenBody(), nil, "");
+  CommDKP.ConfigTab4.CombatLogging:SetPoint("TOPLEFT", CommDKP.ConfigTab4.SuppressNotifications, "BOTTOMLEFT", 0, -8)
   CommDKP.ConfigTab4.CombatLogging:SetChecked(core.DB.defaults.AutoLog)
-  CommDKP.ConfigTab4.CombatLogging:SetScale(0.8)
-  CommDKP.ConfigTab4.CombatLogging.text:SetText("|cff5151de"..L["AUTOCOMBATLOG"].."|r");
-  CommDKP.ConfigTab4.CombatLogging.text:SetFontObject("CommDKPSmall")
+  CommDKP.ConfigTab4.CombatLogging.text:SetText(L["AUTOCOMBATLOG"]);
   CommDKP.ConfigTab4.CombatLogging:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText(L["AUTOCOMBATLOG"], 0.25, 0.75, 0.90, 1, true)
@@ -1103,13 +1108,10 @@ function CommDKP:Options()
     core.DB.defaults.AutoOpenBid = true
   end
 
-  CommDKP.ConfigTab4.AutoOpenCheckbox = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
+  CommDKP.ConfigTab4.AutoOpenCheckbox = W.CreateCheckbox(GenBody(), nil, "");
   CommDKP.ConfigTab4.AutoOpenCheckbox:SetChecked(core.DB.defaults.AutoOpenBid)
-  CommDKP.ConfigTab4.AutoOpenCheckbox:SetScale(0.8);
-  CommDKP.ConfigTab4.AutoOpenCheckbox.text:SetText("|cff5151de"..L["AUTOOPEN"].."|r");
-  CommDKP.ConfigTab4.AutoOpenCheckbox.text:SetScale(1);
-  CommDKP.ConfigTab4.AutoOpenCheckbox.text:SetFontObject("CommDKPSmallLeft")
-  CommDKP.ConfigTab4.AutoOpenCheckbox:SetPoint("TOP", CommDKP.ConfigTab4.CombatLogging, "BOTTOM", 0, 0);
+  CommDKP.ConfigTab4.AutoOpenCheckbox.text:SetText(L["AUTOOPEN"]);
+  CommDKP.ConfigTab4.AutoOpenCheckbox:SetPoint("TOPLEFT", CommDKP.ConfigTab4.CombatLogging, "BOTTOMLEFT", 0, -8);
   CommDKP.ConfigTab4.AutoOpenCheckbox:SetScript("OnClick", function(self)
     core.DB.defaults.AutoOpenBid = self:GetChecked()
   end)
@@ -1124,13 +1126,10 @@ function CommDKP:Options()
   end)
 
   if core.IsOfficer == true then
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
+    CommDKP.ConfigTab4.AutoAwardLootCheckbox = W.CreateCheckbox(GenBody(), nil, "");
     CommDKP.ConfigTab4.AutoAwardLootCheckbox:SetChecked(core.DB.defaults.AutoAwardLoot)
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox:SetScale(0.8);
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox.text:SetText("|cff5151de"..L["AUTOAWARDLOOT"].."|r");
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox.text:SetScale(1);
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox.text:SetFontObject("CommDKPSmallLeft")
-    CommDKP.ConfigTab4.AutoAwardLootCheckbox:SetPoint("TOP", CommDKP.ConfigTab4.AutoOpenCheckbox, "BOTTOM", 0, 0);
+    CommDKP.ConfigTab4.AutoAwardLootCheckbox.text:SetText(L["AUTOAWARDLOOT"]);
+    CommDKP.ConfigTab4.AutoAwardLootCheckbox:SetPoint("TOPLEFT", CommDKP.ConfigTab4.AutoOpenCheckbox, "BOTTOMLEFT", 0, -8);
     CommDKP.ConfigTab4.AutoAwardLootCheckbox:SetScript("OnClick", function(self)
       core.DB.defaults.AutoAwardLoot = self:GetChecked()
 
@@ -1150,12 +1149,10 @@ function CommDKP:Options()
     end)
     
     -- Suppress Broadcast Notifications checkbox
-    CommDKP.ConfigTab4.SuppressTells = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
-    CommDKP.ConfigTab4.SuppressTells:SetPoint("LEFT", CommDKP.ConfigTab4.SuppressNotifications, "RIGHT", 200, 0)
+    CommDKP.ConfigTab4.SuppressTells = W.CreateCheckbox(GenBody(), nil, "");
+    CommDKP.ConfigTab4.SuppressTells:SetPoint("TOPLEFT", CommDKP.ConfigTab4.SuppressNotifications, "TOPLEFT", OPT_COL2, 0)
     CommDKP.ConfigTab4.SuppressTells:SetChecked(core.DB.defaults.SuppressTells)
-    CommDKP.ConfigTab4.SuppressTells:SetScale(0.8)
-    CommDKP.ConfigTab4.SuppressTells.text:SetText("|cff5151de"..L["SUPPRESSBIDWHISP"].."|r");
-    CommDKP.ConfigTab4.SuppressTells.text:SetFontObject("CommDKPSmall")
+    CommDKP.ConfigTab4.SuppressTells.text:SetText(L["SUPPRESSBIDWHISP"]);
     CommDKP.ConfigTab4.SuppressTells:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
       GameTooltip:SetText(L["SUPPRESSBIDWHISP"], 0.25, 0.75, 0.90, 1, true)
@@ -1181,12 +1178,10 @@ function CommDKP:Options()
       core.DB.defaults.DecreaseDisenchantValue = false
     end
   
-    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox = CreateFrame("CheckButton", nil, CommDKP.ConfigTab4, "UICheckButtonTemplate");
-    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox:SetPoint("LEFT", CommDKP.ConfigTab4.CombatLogging, "RIGHT", 200, 0)
+    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox = W.CreateCheckbox(GenBody(), nil, "");
+    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox:SetPoint("TOPLEFT", CommDKP.ConfigTab4.CombatLogging, "TOPLEFT", OPT_COL2, 0)
     CommDKP.ConfigTab4.DecreaseDisenchantCheckbox:SetChecked(core.DB.defaults.DecreaseDisenchantValue)
-    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox:SetScale(0.8);
-    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox.text:SetText("|cff5151de"..L["DECREASEDISENCHANT"].."|r");
-    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox.text:SetFontObject("CommDKPSmall")
+    CommDKP.ConfigTab4.DecreaseDisenchantCheckbox.text:SetText(L["DECREASEDISENCHANT"]);
     CommDKP.ConfigTab4.DecreaseDisenchantCheckbox:SetScript("OnClick", function(self)
       core.DB.defaults.DecreaseDisenchantValue = self:GetChecked()
     end)
@@ -1202,11 +1197,12 @@ function CommDKP:Options()
   
   end
 
-  -- Save Settings Button
+  -- Save Settings Button (Actions card is created at the top of the pane, AD-20.3.1)
+  if CommDKP.ConfigTab4.ModesButton then ActionSlot(CommDKP.ConfigTab4.ModesButton, 1) end
   CommDKP.ConfigTab4.submitSettings = self:CreateButton("BOTTOMLEFT", CommDKP.ConfigTab4, "BOTTOMLEFT", 30, 30, L["SAVESETTINGS"]);
   CommDKP.ConfigTab4.submitSettings:ClearAllPoints();
-  CommDKP.ConfigTab4.submitSettings:SetPoint("TOP", CommDKP.ConfigTab4.AutoOpenCheckbox, "BOTTOMLEFT", 20, -40)
-  CommDKP.ConfigTab4.submitSettings:SetSize(90,25)
+  ActionSlot(CommDKP.ConfigTab4.submitSettings, 4, "primary")
+
   CommDKP.ConfigTab4.submitSettings:SetScript("OnClick", function()
     if core.IsOfficer == true then
       for i=1, 6 do
@@ -1242,18 +1238,21 @@ function CommDKP:Options()
     end
     
     SaveSettings()
+    if core.IsOfficer == true and IsInGuild() then
+      CommDKP.Sync:SendData("CommDKPDKPModes", { core.DB.modes, core.DB.DKPBonus, core.DB.raiders })
+    end
     CommDKP:Print(L["DEFAULTSETSAVED"])
   end)
 
   -- Chatframe Selection 
-  CommDKP.ConfigTab4.ChatFrame = LibDD:Create_UIDropDownMenu("CommDKPChatFrameSelectDropDown", CommDKP.ConfigTab4);
+  CommDKP.ConfigTab4.ChatFrame = DD:Create_UIDropDownMenu("CommDKPChatFrameSelectDropDown", GenBody());
   if not core.DB.defaults.ChatFrames then core.DB.defaults.ChatFrames = {} end
 
-  LibDD:UIDropDownMenu_Initialize(CommDKP.ConfigTab4.ChatFrame, function(self, level, menuList)
+  DD:UIDropDownMenu_Initialize(CommDKP.ConfigTab4.ChatFrame, function(self, level, menuList)
     
-  local SelectedFrame = LibDD:UIDropDownMenu_CreateInfo()
+  local SelectedFrame = DD:UIDropDownMenu_CreateInfo()
     SelectedFrame.func = self.SetValue
-    SelectedFrame.fontObject = "CommDKPSmallCenter"
+
     SelectedFrame.keepShownOnClick = true;
     SelectedFrame.isNotRadio = true;
 
@@ -1261,14 +1260,14 @@ function CommDKP:Options()
       local name = GetChatWindowInfo(i)
       if name ~= "" then
         SelectedFrame.text, SelectedFrame.arg1, SelectedFrame.checked = name, name, core.DB.defaults.ChatFrames[name]
-        LibDD:UIDropDownMenu_AddButton(SelectedFrame)
+        DD:UIDropDownMenu_AddButton(SelectedFrame)
       end
     end
   end)
 
-  CommDKP.ConfigTab4.ChatFrame:SetPoint("LEFT", CommDKP.ConfigTab4.AutoOpenCheckbox, "RIGHT", 130, 0)
-  LibDD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab4.ChatFrame, 150)
-  LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab4.ChatFrame, "Addon Notifications")
+  CommDKP.ConfigTab4.ChatFrame:SetPoint("TOPLEFT", CommDKP.ConfigTab4.AutoOpenCheckbox, "TOPLEFT", OPT_COL2, 3)
+  DD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab4.ChatFrame, 240)
+  DD:UIDropDownMenu_SetText(CommDKP.ConfigTab4.ChatFrame, "Addon Notifications")
 
   function CommDKP.ConfigTab4.ChatFrame:SetValue(arg1)
     core.DB.defaults.ChatFrames[arg1] = not core.DB.defaults.ChatFrames[arg1]
@@ -1280,8 +1279,8 @@ function CommDKP:Options()
   -- Position Bid Timer Button
   CommDKP.ConfigTab4.moveTimer = self:CreateButton("BOTTOMRIGHT", CommDKP.ConfigTab4, "BOTTOMRIGHT", -50, 30, L["MOVEBIDTIMER"]);
   CommDKP.ConfigTab4.moveTimer:ClearAllPoints();
-  CommDKP.ConfigTab4.moveTimer:SetPoint("LEFT", CommDKP.ConfigTab4.submitSettings, "RIGHT", 200, 0)
-  CommDKP.ConfigTab4.moveTimer:SetSize(110,25)
+  ActionSlot(CommDKP.ConfigTab4.moveTimer, 2)
+
   CommDKP.ConfigTab4.moveTimer:SetScript("OnClick", function()
     if moveTimerToggle == 0 then
       CommDKP:StartTimer(120, L["MOVEME"])
@@ -1298,8 +1297,8 @@ function CommDKP:Options()
   -- wipe tables button
   CommDKP.ConfigTab4.WipeTables = self:CreateButton("BOTTOMRIGHT", CommDKP.ConfigTab4, "BOTTOMRIGHT", -50, 30, L["WIPETABLES"]);
   CommDKP.ConfigTab4.WipeTables:ClearAllPoints();
-  CommDKP.ConfigTab4.WipeTables:SetPoint("RIGHT", CommDKP.ConfigTab4.moveTimer, "LEFT", -40, 0)
-  CommDKP.ConfigTab4.WipeTables:SetSize(110,25)
+  ActionSlot(CommDKP.ConfigTab4.WipeTables, 3, "caution")
+
   CommDKP.ConfigTab4.WipeTables:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
     GameTooltip:SetText(L["WIPETABLES"], 0.25, 0.75, 0.90, 1, true);
@@ -1333,9 +1332,20 @@ function CommDKP:Options()
         CommDKP:SetTable(CommDKP_Standby, true, {});
         CommDKP:SetTable(CommDKP_MinBids, true, {});
         CommDKP:SetTable(CommDKP_MaxBids, true, {});
+        -- AD-29.2 (CDKP-021, BR-21.3): show the empty state in all 4 views, flip the pip, and announce the wipe's seed.
         CommDKP:LootHistory_Reset()
+        if CommDKP.ConfigTab5 and CommDKP.ConfigTab5.looter then
+          CommDKP:LootHistory_Update(L["NOFILTER"])
+        end
+        if CommDKP.ConfigTab6 and CommDKP.ConfigTab6.history then
+          CommDKP:DKPHistory_Update(true)
+        end
+        CommDKP:RefreshPriceTable(true)
         CommDKP:FilterDKPTable(core.currentSort, "reset")
         CommDKP:StatusVerify_Update()
+        if IsInGuild() and core.Initialized then
+          CommDKP:SendSeedData()
+        end
       end,
       timeout = 0,
       whileDead = true,
@@ -1347,7 +1357,8 @@ function CommDKP:Options()
 
   -- Options Footer (empty frame to push bottom of scrollframe down)
   CommDKP.ConfigTab4.OptionsFooterFrame = CreateFrame("Frame", nil, CommDKP.ConfigTab4);
-  CommDKP.ConfigTab4.OptionsFooterFrame:SetPoint("TOPLEFT", CommDKP.ConfigTab4.moveTimer, "BOTTOMLEFT")
-  CommDKP.ConfigTab4.OptionsFooterFrame:SetSize(420, 50);
+  CommDKP.ConfigTab4.OptionsFooterFrame:SetPoint("TOPLEFT", CommDKP.ConfigTab4, "TOPLEFT", 0, -stackY)
+  CommDKP.ConfigTab4.OptionsFooterFrame:SetSize(OPT_CARD_W, 1);
+  CommDKP.ConfigTab4:SetHeight(math.max(482, stackY))      -- §12.3.5: ~1031 px of cards in a 482 px viewport
   
 end

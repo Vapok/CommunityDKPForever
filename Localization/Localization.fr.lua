@@ -3,81 +3,17 @@ if GetLocale() == "frFR" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "Lucifron",
-      "Magmadar",
-      "Gehennas",
-      "Garr",
-      "Baron Geddon",
-      "Shazzrah",
-      "Messager de Sulfuron",
-      "Golemagg l'Incinérateur",
-      "Chambellan Executus",
-      "Ragnaros",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "Tranchetripe l'Indompté",
-      "Vaelastrasz le Corrompu",
-      "Seigneur des couvées Lanistaire",
-      "Gueule-de-feu",
-      "Rochébène",
-      "Flamegor",
-      "Chromaggus", 
-      "Nefarian",
-    },
-    AQ = {
-      "Le prophète Skeram",
-      "Garde de guerre Sartura",
-      "Fankriss l'Inflexible",
-      "Princesse Huhuran",
-      "Empereurs Jumeaux",
-      "C'Thun", 
-      "Trio d'insectes",
-      "Viscidus",
-      "Ouro",
-    },
-    NAXX = {
-      "Anub'Rekhan",
-      "Grande Veuve Faerlina",
-      "Maexxna",
-      "Noth le Porte-peste",
-      "Heigan l'Impur",
-      "Horreb",
-      "Instructor Razuvious",
-      "Gothik the Harvester",
-      "Les quatre Cavaliers",
-      "Le recousu",
-      "Grobbulus",
-      "Gluth",
-      "Thaddius",
-      "Sapphiron",
-      "Kel'Thuzad",
-    },
-    ZG = {
-      "Seigneur sanglant Mandokir",
-      "Gahz'ranka",
-      "Hakkar",
-      "Grand Prêtre Thekal",
-      "Grand Prêtre Venoxis",
-      "Grande Prêtresse Arlokk",
-      "Grande Prêtresse Jeklik",
-      "Jin'do le Maléficieur",
-      "Grande Prêtresse Mar'li",
-      "Folie mojo gurubashi",
-    },
-    AQ20 = {
-      "Ayamiss le Chasseur",
-      "Buru Grandgosier",
-      "Général Rajaxx",
-      "Kurinnaxx",
-      "Moam",
-      "Ossirian l'Intouché",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {
       "Onyxia"
-    },
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "Balnazzar", "Beatrix", "Belluaire", "Solistrasza", "Maçon", "Le conseil ressuscité", "Lilian Voss", "Caldoran",
     },
     WORLD = {
       "Azuregos",
@@ -89,17 +25,12 @@ if GetLocale() == "frFR" then
       "Prince Tonneraan",  -- 3079 (AD-12.2)
     },
   }
-  
+
   core.ZoneList = {
-    "Cœur du Magma",
-    "Repaire de l'Aile noire",
-    "Temple d'Ahn'Qiraj",
-    "Naxxramas",
-    "Zul'Gurub",
-    "Ruines d'Ahn'Qiraj",
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "Repaire d'Onyxia",
     "Boss Mondial",
-    "L’enclave Écarlate",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -457,6 +388,7 @@ if GetLocale() == "frFR" then
     LOOTHISTUPDATEPROG = "Mise à jour de l'historique de butin en cours",
     MAINGUISIZE = "Taille de l'interface",
     MANAGE = "Gérer",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "Gérer la liste des raideurs",
     MANAGEDKP = "Gérer les entrées DKP",
     MANAGELISTS = "Gérer les listes",
@@ -537,6 +469,7 @@ if GetLocale() == "frFR" then
     NORANKSELECTED = "Aucun grade n'est sélectionné.",
     NOROLEDETECTED = "Aucun rôle détecté",
     NOSPECREPORTED = "Aucune spécification signalée",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "n'est pas un officier. Vous ne pouvez ajouter que des rangs disposant des autorisations \"Modifier la note du responsable\" dans les paramètres de guilde.",
     NOTETOOLONG = "La note publique des chefs de guilde était trop longue. Note tronquée pour s'adapter à l'horodatage de la table DKP. (31 caractères maximum)",
     NOTIFICATIONSLIKETHIS = "Des notifications comme celle-ci sont maintenant",
@@ -733,6 +666,7 @@ if GetLocale() == "frFR" then
     TABLEQUERYSENT = "Interrogation de l'état de la table DKP de la guilde",
     TABLEQUERYUTD = "À jour",
     TABLESAREEMPTY = "Vos tables sont actuellement vides.",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "Vues de la table",
     TAKINGBIDSON = "Prendre des offres sur",
     TANK = "Tank",

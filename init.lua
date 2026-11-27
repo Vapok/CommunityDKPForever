@@ -168,6 +168,8 @@ CommDKP.Commands = {
   ["test"] = function()
     CommDKP:RunSelfTest()
   end,
+  -- CDKP-022 (AD-30.1.7): session-only comm trace. Not listed in /dkp help.
+  ["trace"] = function() CommDKP:ToggleCommTrace() end,
   ["help"] = function()
     CommDKP:Print(" ");
     CommDKP:Print(L["SLASHCOMMANDLIST"]..":")
@@ -322,6 +324,7 @@ end
 local function DoInitWhenReady(event, arg1, tries)
 	if CommDKP:IsIdentityReady() or tries >= 30 then
 		if tries >= 30 then CommDKP:PrintAlways("CommunityDKP Forever: guild info not ready after 30s; continuing.") end
+		core.GuildStateReady = true   -- AD-20.2.1 (CDKP-013a): the single "identity ready" point (both branches)
 		return DoInit(event, arg1)
 	end
 	if IsInGuild() and C_GuildInfo and C_GuildInfo.GuildRoster then C_GuildInfo.GuildRoster() end
@@ -334,11 +337,16 @@ local function DoGuildUpdate()
 		core.InitStart = true
 
 		-- Prints info after all addons have loaded. Circumvents addons that load saved chat messages pushing info out of view.
-		C_Timer.After(3, function ()
-			CommDKP:CheckOfficer()
+		local function RunGuildStartup(retries)
+			if not core.Initialized and (retries or 0) < 10 then
+				C_Timer.After(1, function() RunGuildStartup((retries or 0) + 1) end)
+				return
+			end
+			CommDKP:UpdateGuildUIState()   -- AD-20.2.2: resolves IsOfficer and refreshes tabs/notice if /dkp was built while nil
+			if CommDKP.ApplyLoginTeamDefault then CommDKP:ApplyLoginTeamDefault() end   -- AD-36.5.6 (BR-28.17): before the sorts + startup sends
 			CommDKP:SortLootTable()
 			CommDKP:SortDKPHistoryTable()
-			CommDKP:Print(L["VERSION"].." "..core.MonVersion..", "..L["CREATEDMAINTAIN"].." Vapok (WoW: Forever Edition)");
+			CommDKP:Print(L["VERSION"].." "..core.SemVer..", "..L["CREATEDMAINTAIN"].." Vapok (WoW: Forever Edition)");
 			CommDKP:Print(L["LOADED"].." "..#CommDKP:GetTable(CommDKP_DKPTable, true).." "..L["PLAYERRECORDS"]..", "..#CommDKP:GetTable(CommDKP_Loot, true).." "..L["LOOTHISTRECORDS"].." "..#CommDKP:GetTable(CommDKP_DKPHistory, true).." "..L["DKPHISTRECORDS"]..".");
 			CommDKP:Print(L["USE"].." /dkp ? "..L["SUBMITBUGS"].." @ https://github.com/Vapok/CommunityDKPForever/issues");
 			CommDKP.Sync:SendData("CommDKPBuild", tostring(core.BuildNumber)) -- broadcasts build number to guild to check if a newer version is available
@@ -348,7 +356,8 @@ local function DoGuildUpdate()
 			-- this basically sends index of latest entry in loot and DKP tables to everyone online in guild,
 			-- if they have this entry it does nothing since they are up to date, if they dont it changes seed in those tables to the index being sent
 			CommDKP:SendSeedData();
-		end)
+		end
+		C_Timer.After(3, function() RunGuildStartup(0) end)
 	end
 end
 
@@ -362,7 +371,7 @@ function CommDKP:SendSeedData()
 
 		latestIndexForTeam[tostring(_teams[i][1])] = {}
 
-		if 	#CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1])) > 0 and strfind(CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1].index, "-") then
+		if 	#CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1])) > 0 and type(CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1]) == "table" and type(CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1].index) == "string" and strfind(CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1].index, "-") then   -- AD-36.4.1 (BR-28.11, CM-24)
 			local off1,date1 = strsplit("-", CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1].index)
 			if CommDKP:ValidateSender(off1) then
 				latestIndexForTeam[tostring(_teams[i][1])]["DKPHistory"] = CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(_teams[i][1]))[1].index
@@ -373,7 +382,7 @@ function CommDKP:SendSeedData()
 			latestIndexForTeam[tostring(_teams[i][1])]["DKPHistory"] = "start"
 		end
 		
-		if #CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1])) > 0 and strfind(CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1].index, "-") then
+		if #CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1])) > 0 and type(CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1]) == "table" and type(CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1].index) == "string" and strfind(CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1].index, "-") then   -- AD-36.4.1 (BR-28.11, CM-24)
 			local off2,date2 = strsplit("-", CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1].index)
 			if CommDKP:ValidateSender(off2) then
 				latestIndexForTeam[tostring(_teams[i][1])]["Loot"] = CommDKP:GetTable(CommDKP_Loot, true, tostring(_teams[i][1]))[1].index
@@ -400,6 +409,34 @@ function CommDKP:SendSeedData()
 
 	CommDKP.Sync:SendData("CommDKPSeed", latestIndexForTeam) -- requests role and spec data and sends current seeds (index of newest DKP and Loot entries)
 
+end
+
+-- AD-36.5.6 (CDKP-028, BR-28.17 / Vapok ruling 4): once per login, a character that is a roster row of EXACTLY ONE team
+-- is put on that team; 0 or 2+ teams: unchanged. Sends nothing (the startup SendTalentsAndRole / SendSeedData follow)
+-- and never errors (SetCurrentTeam's UI-less path). .player rows are realm-less "First Last" (AD-9 / AD-10.3);
+-- SamePlayer normalizes both sides. A bare first name is retried (2 s x 15, the BR-18.8 budget), never guessed.
+function CommDKP:ApplyLoginTeamDefault(tries)
+	if core.LoginTeamDefaultDone or not core.Initialized or not IsInGuild() then return false end
+	if not CommDKP:HasFullPlayerName() then
+		tries = (tries or 0) + 1
+		if tries <= 15 then C_Timer.After(2, function() CommDKP:ApplyLoginTeamDefault(tries) end)
+		else core.LoginTeamDefaultDone = true end
+		return false
+	end
+	core.LoginTeamDefaultDone = true
+	local me, hit, n = CommDKP:GetPlayerName(), nil, 0
+	for _, t in ipairs(CommDKP:GetGuildTeamList()) do
+		local team = tostring(t[1])
+		local rows = CommDKP:GetTable(CommDKP_DKPTable, true, team)
+		for i = 1, #rows do
+			if type(rows[i]) == "table" and CommDKP:SamePlayer(rows[i].player, me) then n = n + 1; hit = team; break end
+		end
+	end
+	if n == 1 and hit ~= tostring(CommDKP:GetCurrentTeamIndex()) then
+		CommDKP:SetCurrentTeam(hit, { noTalentSend = true })
+		return true
+	end
+	return false
 end
 
 function CommDKP_OnEvent(self, event, arg1, ...)
@@ -459,7 +496,9 @@ function CommDKP_OnEvent(self, event, arg1, ...)
 		end
 	end
 
-	if event == "BOSS_KILL" then
+	if event == "TRAIT_CONFIG_UPDATED" then		-- AD-19.2 (012g): debounced live spec/role refresh (BR-12.14.6)
+		if core.Initialized then CommDKP:QueueTalentRefresh() end
+	elseif event == "BOSS_KILL" then
 		if IsSecret(arg1) or IsSecret((...)) then return end	-- AD-11.5: never index/store/print Secret Values
 		if IsInRaid() then
 			RecordKilledNPC((...))				-- AC-1: LastKilledNPC holds the boss name
@@ -532,7 +571,13 @@ function CommDKP_OnEvent(self, event, arg1, ...)
 			end
 		end
 		if core.Initialized then
-			CommDKP:SendTalentsAndRole()
+			CommDKP:QueueTalentSend("zone")		-- AD-26.5.1 (CDKP-018a): debounced
+		end
+	elseif event == "PLAYER_LEVEL_UP" then		-- AD-26.5.1 / AD-26.3.2 (BR-18.6a): a new level re-arms the talent retries
+		if core.Initialized then
+			core.TalentRetryExhausted = false
+			CommDKP:CancelTalentRetry()
+			CommDKP:QueueTalentSend("levelup", 3)
 		end
 	elseif event == "CHAT_MSG_WHISPER" then
 		CommDKP:CheckOfficer()
@@ -545,15 +590,16 @@ function CommDKP_OnEvent(self, event, arg1, ...)
 				CommDKP_Standby_Handler(arg1, ...)
 			end
 		end
+	elseif event == "PLAYER_GUILD_UPDATE" then             -- AD-20.2.4 (CDKP-013a); arg1 = unitTarget (may be nil)
+		if type(arg1) == "string" and arg1 ~= "player" then return end
+		core.GuildStateReady = true                          -- BR-13.2.5: explicit guild event = decision allowed
+		if IsInGuild() and not core.InitStart then DoGuildUpdate() end   -- BR-13.2.4: one-time guild init on join
+		CommDKP:QueueGuildStateRefresh()
 	elseif event == "GUILD_ROSTER_UPDATE" then
-
-		if not core.InitStart then
-			DoGuildUpdate();
-		end
-
-		if IsInGuild() and core.InitStart then
-			self:UnregisterEvent("GUILD_ROSTER_UPDATE")
-		end
+		-- AD-20.2.4: stays registered after init so guild transitions are observed; cheap compare on roster ticks.
+		if not core.InitStart then DoGuildUpdate() end
+		local inGuild = IsInGuild() and true or false
+		if core.IsOfficer == nil or inGuild ~= core.LastInGuild then CommDKP:QueueGuildStateRefresh() end
 	elseif event == "CHAT_MSG_RAID" or event == "CHAT_MSG_RAID_LEADER" then
 		CommDKP:CheckOfficer()
 		arg1 = strlower(arg1)
@@ -622,6 +668,14 @@ function CommDKP_OnEvent(self, event, arg1, ...)
 	--elseif event == "CHAT_MSG_SYSTEM" then
 		--MonoDKP_CHAT_MSG_SYSTEM(arg1)
 	elseif event == "GROUP_ROSTER_UPDATE" then 			--updates raid listing if window is open
+		-- AD-26.5.1 (D-5, AC-18.7): guildless group join -> re-send profile/talents to the new group.
+		if not IsInGuild() and IsInGroup() then
+			local n = GetNumGroupMembers() or 0
+			if n > (core.LastGroupSize or 0) then CommDKP:QueueTalentSend("group", 3) end
+			core.LastGroupSize = n
+		elseif not IsInGroup() then
+			core.LastGroupSize = 0
+		end
 		if CommDKP.UIConfig and core.CommDKPUI:IsShown() then
 			if core.CurSubView == "raid" then
 				CommDKP:ViewLimited(true)
@@ -761,7 +815,7 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 	SlashCmdList.RELOADUI = ReloadUI;--]]
 
 	if(event == "ADDON_LOADED") then
-		local ACTION_BAR_FRAMES = { "MultiBarLeft", "MultiBarRight", "MultiBarBottomLeft", "MultiBarBottomRight", "MainMenuBar" }
+		local ACTION_BAR_FRAMES = { "MultiBarLeft", "MultiBarRight", "MultiBarBottomLeft", "MultiBarBottomRight", "MainMenuBar", "MainActionBar" }   -- AD-19.2 (012g): BR-12.14.7, 1.60.1 main bar
 		C_Timer.After(5, function ()
 			-- CDKP-006 F6-b (AD-8.4): one UI error must not stop the addon from starting or leave a half-built window on screen.
 			local ok, err = xpcall(function()
@@ -776,36 +830,34 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 				CommDKP:PrintAlways("UI failed to build (Guild Leader: type /dkp test). " .. core.InitError)
 			end
 			core.KeyEventUI = CreateFrame("Frame","KeyEventFrame", UIParent);
-			
-			-- on every key down ? really?	
-			core.KeyEventUI:SetScript("OnKeyDown", function(self, key)
-				if core.Initialized and core.IsOfficer then
-					-- AD-8.4: Mainline renamed/rebuilt several action-bar frames; a nil global must not throw here.
-					for _, n in ipairs(ACTION_BAR_FRAMES) do
-						local f = _G[n]
-						if f and MouseIsOver(f) then return end
-					end
-						-- TODO: Make this a configurable keybind.
-					if GameTooltip:GetItem() then
-						local item, link = GameTooltip:GetItem();
 
-						if (key == "LALT" or key == "LSHIFT") and IsShiftKeyDown() and IsAltKeyDown() then
-							
-							local itemName, itemLink, itemIcon = CommDKP:ParseItemLink(link)	-- AD-12.3
-							if itemLink then CommDKP:ToggleBidWindow(itemLink, itemIcon, itemName) end
-						end
-
-						if (key == "LCTRL" or key == "LSHIFT") and IsShiftKeyDown() and IsControlKeyDown() then
-							-- TODO: Automate the Price a Bit More
-							CommDKP:AwardConfirm(nil, 0, core.DB.bossargs.LastKilledBoss, core.DB.bossargs.CurrentRaidZone, link);
-						end
-
-
-					end
+			-- AD-17.2 (CDKP-010): officer item shortcuts run off the modifier event only. No keyboard
+			-- focus or propagation, so ordinary keys never reach the addon (no per-keystroke cost, no combat keyboard taint).
+			core.KeyEventUI:RegisterEvent("MODIFIER_STATE_CHANGED")
+			core.KeyEventUI:SetScript("OnEvent", function(self, event, key, down)
+				if event ~= "MODIFIER_STATE_CHANGED" or down ~= 1 then return end
+				if key ~= "LALT" and key ~= "LSHIFT" and key ~= "LCTRL" then return end
+				if not (core.Initialized and core.IsOfficer) then return end
+				local bid   = (key == "LALT"  or key == "LSHIFT") and IsShiftKeyDown() and IsAltKeyDown()
+				local award = (key == "LCTRL" or key == "LSHIFT") and IsShiftKeyDown() and IsControlKeyDown()
+				if not (bid or award) then return end
+				-- AD-8.4: Mainline renamed/rebuilt several action-bar frames; a nil global must not throw here.
+				for _, n in ipairs(ACTION_BAR_FRAMES) do
+					local f = _G[n]
+					if f and f.IsMouseOver and f:IsShown() and f:IsMouseOver() then return end
+				end
+				local link = CommDKP:GetHoveredItemLink(GameTooltip)
+				if not link then return end
+				-- TODO: Make this a configurable keybind.
+				if bid then
+					local itemName, itemLink, itemIcon = CommDKP:ParseItemLink(link)	-- AD-12.3
+					if itemLink then CommDKP:ToggleBidWindow(itemLink, itemIcon, itemName) end
+				end
+				if award then
+					-- TODO: Automate the Price a Bit More
+					CommDKP:AwardConfirm(nil, 0, core.DB.bossargs.LastKilledBoss, core.DB.bossargs.CurrentRaidZone, link);
 				end
 			end);
-
-			core.KeyEventUI:SetPropagateKeyboardInput(true);
 		end)
 		------------------------------------------------
 		-- Verify DB Schemas
@@ -815,6 +867,7 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 		-- Verify that the DB table has been initialized.
 		CommDKP:SetTable(CommDKP_DB, false, CommDKP:InitializeCommDKPDB(CommDKP:GetTable(CommDKP_DB)))
 		core.DB = CommDKP:GetTable(CommDKP_DB); --Player specific DB
+		if CommDKP.CreateMinimapButton then CommDKP:CreateMinimapButton() end   -- AD-19.2 (012e): needs core.DB.defaults
 
 		-- CDKP-005 (AD-6.3): saved palette choice (/dkp palette). Applied before any frame is built
 		-- (the main menu is created 5s later). Optional field; absent = core.DefaultPaletteName.
@@ -838,7 +891,7 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 	    --	Import SavedVariables
 	    ------------------------------------
 		core.WorkingTable 		= CommDKP:GetTable(CommDKP_DKPTable, true); -- imports full DKP table to WorkingTable for list manipulation
-		core.PriceTable			= CommDKP:FormatPriceTable();
+		CommDKP:RefreshPriceTable(); -- AD-25 (S1): builds + sorts; redraw skipped until the menu exists
 
 		for i=1, #core.WorkingTable do
 			local CurPlayer = core.WorkingTable[i].player;
@@ -846,8 +899,11 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 
 			if search then
 				--Set Version Info on Legacy Record First
-				local profile = CommDKP:GetTable(CommDKP_Profiles, true)[CurPlayer] or CommDKP:GetDefaultEntity();
-				core.WorkingTable[i].version = profile.version;
+				-- AD-26.4.4 (BR-18.13): a real row version is never replaced by a placeholder.
+				local profile = CommDKP:GetTable(CommDKP_Profiles, true)[CurPlayer]
+				local v = profile and profile.version
+				if not CommDKP:IsPlaceholderMeta("version", v) then core.WorkingTable[i].version = v
+				elseif core.WorkingTable[i].version == nil then core.WorkingTable[i].version = "Unknown" end
 			end
 		end
 
@@ -864,18 +920,6 @@ function CommDKP:OnInitialize(event, name)		-- This is the FIRST function to run
 
 		table.sort(core.WorkingTable, function(a, b)
 			return a["player"] < b["player"]
-		end)
-		
-		table.sort(core.PriceTable, function(a, b)
-			if a["item"] ~= nil and b["item"] == nil then
-				return true;
-			elseif a["item"] == nil and b["item"] ~= nil then
-				return false;
-			elseif a["item"] == nil and b["item"] == nil then
-				return false;
-			end
-
-			return a["item"] < b["item"]
 		end)
 		CommDKP:StartBidTimer("seconds", nil)						-- initiates timer frame for use
 
@@ -981,29 +1025,7 @@ function CommDKP:UpgradeDBSchema(newDbTable, oldDbTable, hasTeams, tableName)
 	--Set Prior Build
 	newDbTable.dbinfo.priorbuild = newDbTable.dbinfo.build;
 
-	-- Build 20205 (2.2.5) Changes
-	if newDbTable.dbinfo.build < 20205 and newDbTable.dbinfo.priorbuild ~= core.BuildNumber then
-		if newDbTable.dbinfo.name == "CommDKP_DB" then
-
-			local defaultTable = {}
-			defaultTable = CommDKP:InitializeCommDKPDB(CommDKP:GetTable(defaultTable))
-			if not defaultTable.defaults.CurrentTeam then defaultTable.defaults.CurrentTeam = "0" end;
-			if not defaultTable.teams then defaultTable.teams = {} end;
-			newDbTable[core.defaultTable] = defaultTable;
-		end
-	end
-
-	if newDbTable.dbinfo.build < 30200 and newDbTable.dbinfo.priorbuild ~= core.BuildNumber and newDbTable.dbinfo.priorbuild ~= 0 then
-		if newDbTable.dbinfo.name == "CommDKP_MinBids" then
-			newDbTable = CommDKP:RefactorMinBidItemTable(newDbTable);
-		end
-	end
-
-	if newDbTable.dbinfo.build < 30202 and newDbTable.dbinfo.priorbuild ~= core.BuildNumber and newDbTable.dbinfo.priorbuild ~= 0 then
-		if newDbTable.dbinfo.name == "CommDKP_MinBids" then
-			newDbTable = CommDKP:VerifyMinBidItemTable(newDbTable);
-		end
-	end
+	-- AD-19 (CDKP-012a): 10000 is the clean 1.x epoch. Future migrations: if build >= 10000 and build < <NEW> then ... end
 
 	-- Set Current Build Number
 	newDbTable.dbinfo.build = core.BuildNumber;
@@ -1051,7 +1073,7 @@ function CommDKP:InitializeCommDKPDB(dbTable)
 			Head = 0, Neck = 0, Shoulders = 0, Cloak = 0, Chest = 0, Bracers = 0, Hands = 0, Belt = 0, Legs = 0, Boots = 0, Ring = 0, Trinket = 0, OneHanded = 0, TwoHanded = 0, OffHand = 0, Range = 0, Other = 0,
 		}
 	end
-	if not dbTable.bossargs then dbTable.bossargs = { CurrentRaidZone = "Molten Core", LastKilledBoss = "Lucifron" } end
+	if not dbTable.bossargs then local z, b = CommDKP:GetDefaultBossContext(); dbTable.bossargs = { CurrentRaidZone = z, LastKilledBoss = b } end	-- AD-18.4
 	if not dbTable.modes or not dbTable.modes.mode then dbTable.modes = { mode = "Minimum Bid Values", SubZeroBidding = false, rounding = 0, AddToNegative = false, increment = 60, ZeroSumBidType = "Static", AllowNegativeBidders = false } end;
 	if not dbTable.modes.ZeroSumBank then dbTable.modes.ZeroSumBank = { balance = 0 } end
 	if not dbTable.modes.channels then dbTable.modes.channels = { raid = true, whisper = true, guild = true } end
@@ -1069,7 +1091,9 @@ function CommDKP:InitializeCommDKPDB(dbTable)
 			if not next(bosses) then dbTable.CustomEncounters[zone] = nil end
 		end
 	end
+	CommDKP:RepairBossContext(dbTable.bossargs, dbTable.CustomEncounters)	-- AD-18.4 (CDKP-011): retired/stale zone -> launch default (idempotent)
 	if not dbTable.defaults.HideChangeLogs then dbTable.defaults.HideChangeLogs = 0 end
+	local hcl = tonumber(dbTable.defaults.HideChangeLogs); if not hcl or hcl > core.BuildNumber then dbTable.defaults.HideChangeLogs = 0 end	-- AD-19: 30209-era stamp -> show the 1.0.0 Change Log
 	if not dbTable.modes.AntiSnipe then dbTable.modes.AntiSnipe = 0 end
 	if not dbTable.defaults.CurrentGuild then dbTable.defaults.CurrentGuild = {} end
 	if not dbTable.defaults.CurrentTeam then dbTable.defaults.CurrentTeam = "0" end;
@@ -1077,11 +1101,6 @@ function CommDKP:InitializeCommDKPDB(dbTable)
 	if not dbTable.modes.AnnounceRaidWarning then dbTable.modes.AnnounceRaidWarning = false end;
 	if dbTable.defaults.CustomMaxBid == nil then dbTable.defaults.CustomMaxBid = true end;
 	if dbTable.defaults.CustomMinBid == nil then dbTable.defaults.CustomMinBid = true end;
-
-	-- 3.1.3 Version Change - Removing installed Variables
-	if dbTable.defaults.installed210 then
-		dbTable.defaults.installed210 = nil;
-	end
 
 	if dbTable.defaults.installed then
 		dbTable.defaults.installed = nil;
@@ -1407,4 +1426,7 @@ events:RegisterEvent("BOSS_KILL")
 events:RegisterEvent("TRADE_SHOW")
 events:RegisterEvent("TRADE_ACCEPT_UPDATE")
 events:RegisterEvent("TRADE_CLOSED")
+pcall(events.RegisterEvent, events, "TRAIT_CONFIG_UPDATED")   -- AD-19: guarded (unknown event names throw on 12.x)
+pcall(events.RegisterEvent, events, "PLAYER_GUILD_UPDATE")    -- AD-20.2.4 (CDKP-013a): live guild join/leave/rank changes
+pcall(events.RegisterEvent, events, "PLAYER_LEVEL_UP")        -- AD-26.5.1 (CDKP-018a): BR-18.6a talent retry re-arm
 events:SetScript("OnEvent", CommDKP_OnEvent); -- calls the above CommDKP_OnEvent function to determine what to do with the event

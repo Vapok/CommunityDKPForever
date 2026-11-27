@@ -3,7 +3,8 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
 
-local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (team / player / boss / zone)
+local W = CommDKP.Widgets
 
 local function SetItemPrice(cost, loot)
 	-- AD-12.3: cold-cache safe; MinBids is keyed by the STRING item ID (itemKey).
@@ -28,8 +29,7 @@ local function SetItemPrice(cost, loot)
 		end
 		newItem = CommDKP:GetTable(CommDKP_MinBids, true)[itemID];
 	end
-	core.PriceTable = CommDKP:FormatPriceTable();
-	CommDKP:PriceTable_Update(0);
+	CommDKP:RefreshPriceTable();	-- AD-25 (S4)
 	CommDKP.Sync:SendData("CommDKPSetPrice", newItem);
 
 end
@@ -205,8 +205,7 @@ local function AwardItem(player, cost, boss, zone, loot, reassign)
 				CommDKP.Sync:SendData("CommDKPSetPrice", CommDKP:GetTable(CommDKP_MinBids, true)[itemID]);
 			end
 			
-			core.PriceTable = CommDKP:FormatPriceTable();
-			CommDKP:PriceTable_Update(0);
+			CommDKP:RefreshPriceTable();	-- AD-25 (S5)
 
 			if mode == "Zero Sum" and not reassign then
 				core.DB.modes.ZeroSumBank.balance = core.DB.modes.ZeroSumBank.balance + -tonumber(cost)
@@ -263,88 +262,115 @@ local function AwardItem(player, cost, boss, zone, loot, reassign)
 	end
 end
 
+-- AD-19.2 (012b): ONE boss-menu builder for Award Confirm + the officer Bidding window (BR-12.10.1).
+-- dd must define dd:SetValue(newValue, zoneOrNil) that never relies on self (AD-11.4). curBoss/curZone are the dd's selection.
+-- Level 1 = bosses of curZone, then recent kills, then an "All Raids" section whose zones open level 2.
+function CommDKP:PopulateBossDropdown(dd, level, menuList, curBoss, curZone)
+	local info = DD:UIDropDownMenu_CreateInfo()
+	info.func, info.isNotRadio = dd.SetValue, true
+	if (level or 1) == 1 then
+		local names, seen = CommDKP:GetZoneBossNames(curZone)
+		-- An ad-hoc/custom curBoss not in this zone's catalog stays visible (and checked) at the top.
+		if curBoss and curBoss ~= "" and not seen[curBoss] then
+			seen[curBoss] = true
+			info.text, info.arg1, info.arg2, info.checked = curBoss, curBoss, nil, true
+			DD:UIDropDownMenu_AddButton(info)
+		end
+		for _, n in ipairs(names) do
+			info.text, info.arg1, info.arg2, info.checked = n, n, nil, n == curBoss
+			DD:UIDropDownMenu_AddButton(info)
+		end
+		-- "Recent Kills" comes ONLY from actual recorded kills (BOSS_KILL / ENCOUNTER_END success).
+		-- core.LastKilledBoss is NOT used: it defaults to the first launch-raid boss (AD-18.4) and tracks Adjust-tab selections.
+		local recent = {}
+		for _, n in ipairs(core.LastKilledNPC or {}) do
+			if type(n) == "string" and n ~= "" and not seen[n] then recent[#recent + 1] = n; seen[n] = true end
+		end
+		if #recent > 0 then
+			local t = DD:UIDropDownMenu_CreateInfo()
+			t.text, t.isTitle, t.notCheckable = L["RECENTKILLS"] or "Recent Kills", true, true
+			DD:UIDropDownMenu_AddButton(t)
+			for _, n in ipairs(recent) do
+				info.text, info.arg1, info.arg2, info.checked = n, n, nil, n == curBoss
+				DD:UIDropDownMenu_AddButton(info)
+			end
+		end
+		local t = DD:UIDropDownMenu_CreateInfo()
+		t.text, t.isTitle, t.notCheckable = L["ALLRAIDS"] or "All Raids", true, true
+		DD:UIDropDownMenu_AddButton(t)
+		for _, z in ipairs(CommDKP:GetAwardZoneNames()) do
+			local sub = DD:UIDropDownMenu_CreateInfo()    -- fresh table: no func, so a click on the zone row only opens it
+			sub.text, sub.hasArrow, sub.menuList, sub.notCheckable = z, true, z, true
+			DD:UIDropDownMenu_AddButton(sub)
+		end
+	else
+		for _, n in ipairs(CommDKP:GetZoneBossNames(menuList)) do      -- menuList is the zone name
+			info.text, info.arg1, info.arg2, info.checked = n, n, menuList, (n == curBoss and menuList == curZone)
+			DD:UIDropDownMenu_AddButton(info, level)
+		end
+	end
+end
+
 local function AwardConfirm_Create()
 
 	local f;
 
-	-- UX §10.4: native template window (modal floater, returns focus on hide); now movable, clamped, Esc = Cancel.
-	f = CommDKP:CreateForeverWindow("CommDKP_AwardWindowConfirm", 400, 270,
-		"CommunityDKP Forever \226\128\148 " .. L["CONFAWARD"])
+	-- UX §12.4.8 / AD-16.4: "plaque" (400 x 270, modal floater, returns focus on hide); movable, clamped, Esc = Cancel.
+	-- Award card (summary) + Details card + the action row, all anchored to f.Content (BR-9.4.4). Q9 short title.
+	local content
+	f, content = CommDKP:CreateForeverWindow("CommDKP_AwardWindowConfirm", 400, 270, L["CONFAWARD"], { style = "plaque" })
 	f:SetPoint("TOP", UIParent, "TOP", 0, -200);
 	f.confirmHeader = f.TitleLabel          -- alias: the in-body header is retired; any :SetText() still works
 	if f.CloseButton then f.CloseButton:HookScript("OnClick", function() PlaySound(851) end) end   -- same sound as noButton
 
-	----------------------------------
-	-- Team row
-	----------------------------------
-
-		f.teamHeader = f:CreateFontString(nil, "OVERLAY")
-		f.teamHeader:SetFontObject("CommDKPLargeRight");
-		f.teamHeader:SetScale(0.7)
-		f.teamHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 120, -60);
-		f.teamHeader:SetText(L["TEAM"]..":")
-
-		f.team = LibDD:Create_UIDropDownMenu("CommDKPAwardConfirmTeamDropDown", f);
-		f.team:SetPoint("LEFT", f.teamHeader, "RIGHT", -15, 0)
-		LibDD:UIDropDownMenu_SetWidth(f.team, 150)
-		LibDD:UIDropDownMenu_JustifyText(f.team, "LEFT")
+	local awardCard = W.CreateCard(content, L["CARDAWARD"], 384, 108)
+	awardCard:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+	local detailsCard = W.CreateCard(content, L["CARDDETAILS"], 384, 84)
+	detailsCard:SetPoint("TOPLEFT", awardCard, "BOTTOMLEFT", 0, -8)
+	f.AwardCard, f.DetailsCard = awardCard, detailsCard
+	local a, d = awardCard.Body, detailsCard.Body
+	local COL_W = 112                       -- Details: three equal selectors (labels above), 8 px gutters
 
 	----------------------------------
-	-- Player row
-	----------------------------------	
-
-		f.playerHeader = f:CreateFontString(nil, "OVERLAY")
-		f.playerHeader:SetFontObject("CommDKPLargeRight");
-		f.playerHeader:SetScale(0.7)
-		f.playerHeader:SetPoint("TOPRIGHT", f.teamHeader, "BOTTOMRIGHT", 0, -10);
-		f.playerHeader:SetText(L["PLAYER"]..":")
-
-		f.player = LibDD:Create_UIDropDownMenu("CommDKPAwardConfirmPlayerDropDown", f);
-		f.player:SetPoint("LEFT", f.playerHeader, "RIGHT", -15, 0)
-		LibDD:UIDropDownMenu_SetWidth(f.player, 150)
-		LibDD:UIDropDownMenu_JustifyText(f.player, "LEFT")
-
+	-- Item row (Award card): icon 32 + the link in its quality color
 	----------------------------------
-	-- Item row
-	----------------------------------	
 
-		f.lootHeader = f:CreateFontString(nil, "OVERLAY")
-		f.lootHeader:SetFontObject("CommDKPLargeRight");
-		f.lootHeader:SetScale(0.7)
-		f.lootHeader:SetPoint("TOPRIGHT", f.playerHeader, "BOTTOMRIGHT", 0, -10);
-		f.lootHeader:SetText(L["ITEM"]..":")
-
-		f.lootIcon = f:CreateTexture(nil, "OVERLAY", nil);
-		f.lootIcon:SetPoint("LEFT", f.lootHeader, "RIGHT", 5, 0);
+		f.lootIcon = a:CreateTexture(nil, "OVERLAY", nil);
+		f.lootIcon:SetPoint("TOPLEFT", a, "TOPLEFT", W.PAD, -8);
 		f.lootIcon:SetColorTexture(0, 0, 0, 1)
-		f.lootIcon:SetSize(20, 20);
+		f.lootIcon:SetSize(32, 32);
 
-		f.loot = f:CreateFontString(nil, "OVERLAY")
-		f.loot:SetFontObject("CommDKPNormalLeft");
-		f.loot:SetPoint("LEFT", f.lootIcon, "RIGHT", 5, 1);
-		f.loot:SetSize(200, 28);
+		f.loot = W.CreateText(a, "title", nil, "LEFT")
+		f.loot:SetPoint("LEFT", f.lootIcon, "RIGHT", 8, 0);
+		f.loot:SetPoint("RIGHT", a, "RIGHT", -W.PAD, 0);
+		if f.loot.SetWordWrap then f.loot:SetWordWrap(false) end
 
 	----------------------------------
-	-- Cost row
+	-- Player row (Award card)
 	----------------------------------
 
-		f.costHeader = f:CreateFontString(nil, "OVERLAY")
-		f.costHeader:SetFontObject("CommDKPLargeRight");
-		f.costHeader:SetScale(0.7)
-		f.costHeader:SetPoint("TOPRIGHT", f.lootHeader, "BOTTOMRIGHT", 0, -10);
-		f.costHeader:SetText(L["ITEMCOST"]..":")
+		f.playerHeader = W.CreateText(a, "label", L["PLAYER"], "LEFT")   -- Q11: "Player" (no new string)
+		f.playerHeader:SetPoint("LEFT", a, "TOPLEFT", W.PAD, -59);
 
-		f.cost = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-		
+		f.player = DD:Create_UIDropDownMenu("CommDKPAwardConfirmPlayerDropDown", a);
+		f.player:SetPoint("TOPLEFT", a, "TOPLEFT", 64, -48)
+		DD:UIDropDownMenu_SetWidth(f.player, 150)
+		DD:UIDropDownMenu_JustifyText(f.player, "LEFT")
+
+	----------------------------------
+	-- Cost row (Award card, right of the player selector)
+	----------------------------------
+
+		f.costHeader = W.CreateText(a, "label", L["ITEMCOST"], "LEFT")
+		f.costHeader:SetPoint("LEFT", a, "TOPLEFT", 226, -59);
+
+		f.cost = CreateFrame("EditBox", nil, a, "BackdropTemplate")
+
 		f.cost:SetAutoFocus(false)
 		f.cost:SetMultiLine(false)
-		f.cost:SetPoint("LEFT", f.costHeader, "RIGHT", 5, 0)
-		f.cost:SetSize(50, 22)
-		CommDKP:ApplyBackdrop(f.cost, "SolidEdge", "InputBg", "InputBorderAccent")
+		f.cost:SetPoint("TOPLEFT", a, "TOPLEFT", 284, -48)
+		f.cost:SetSize(50, W.H)
 		f.cost:SetMaxLetters(10)
-		f.cost:SetTextColor(1, 1, 1, 1)
-		f.cost:SetFontObject("CommDKPSmallRight")
-		f.cost:SetTextInsets(10,10,0,0)
 		f.cost:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
 			self:ClearFocus()
 		end)
@@ -354,54 +380,54 @@ local function AwardConfirm_Create()
 		f.cost:SetScript("OnEnterPressed", function(self)    -- clears focus on enter
 			self:ClearFocus()
 		end)
+		W.StyleEditBox(f.cost, { numeric = true })
 
-		f.costFooter = f:CreateFontString(nil, "OVERLAY")
-		f.costFooter:SetFontObject("CommDKPNormalLeft");
+		f.costFooter = W.CreateText(a, "caption", nil, "LEFT", "textMuted")
 		f.costFooter:SetPoint("LEFT", f.cost, "RIGHT", 5, 0);
-		f.costFooter:SetSize(200, 28);
 
 	----------------------------------
-	-- Boss row
+	-- Details card: Team / Boss / Zone, three equal selectors with labels above
 	----------------------------------
 
-		f.bossHeader = f:CreateFontString(nil, "OVERLAY")
-		f.bossHeader:SetFontObject("CommDKPLargeRight");
-		f.bossHeader:SetScale(0.7)
-		f.bossHeader:SetPoint("TOPRIGHT", f.costHeader, "BOTTOMRIGHT", 0, -10);
-		f.bossHeader:SetText(L["BOSS"]..":")
+		f.teamHeader = W.CreateText(d, "label", L["TEAM"], "LEFT")
+		f.teamHeader:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD, -8);
 
-		f.bossDropDown = LibDD:Create_UIDropDownMenu("CommDKPAwardConfirmBossDropDown", f);
-		f.bossDropDown:SetPoint("LEFT", f.bossHeader, "RIGHT", -15, -2)
-		LibDD:UIDropDownMenu_SetWidth(f.bossDropDown, 150)
-		LibDD:UIDropDownMenu_JustifyText(f.bossDropDown, "LEFT")
+		f.team = DD:Create_UIDropDownMenu("CommDKPAwardConfirmTeamDropDown", d);
+		f.team:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD, -22)
+		DD:UIDropDownMenu_SetWidth(f.team, COL_W)
+		DD:UIDropDownMenu_JustifyText(f.team, "LEFT")
 
-	----------------------------------
-	-- Zone row
-	----------------------------------
+		f.bossHeader = W.CreateText(d, "label", L["BOSS"], "LEFT")
+		f.bossHeader:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD + COL_W + 8, -8);
 
-		f.zoneHeader = f:CreateFontString(nil, "OVERLAY")
-		f.zoneHeader:SetFontObject("CommDKPLargeRight");
-		f.zoneHeader:SetScale(0.7)
-		f.zoneHeader:SetPoint("TOPRIGHT", f.bossHeader, "BOTTOMRIGHT", 0, -10);
-		f.zoneHeader:SetText(L["ZONE"]..":")
+		f.bossDropDown = DD:Create_UIDropDownMenu("CommDKPAwardConfirmBossDropDown", d);
+		f.bossDropDown:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD + COL_W + 8, -22)
+		DD:UIDropDownMenu_SetWidth(f.bossDropDown, COL_W)
+		DD:UIDropDownMenu_JustifyText(f.bossDropDown, "LEFT")
 
-		f.zoneDropDown = LibDD:Create_UIDropDownMenu("CommDKPAwardConfirmZoneDropDown", f);
-		f.zoneDropDown:SetPoint("LEFT", f.zoneHeader, "RIGHT", -15, -2)
-		LibDD:UIDropDownMenu_SetWidth(f.zoneDropDown, 150)
-		LibDD:UIDropDownMenu_JustifyText(f.zoneDropDown, "LEFT")
+		f.zoneHeader = W.CreateText(d, "label", L["ZONE"], "LEFT")
+		f.zoneHeader:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD + 2 * (COL_W + 8), -8);
+
+		f.zoneDropDown = DD:Create_UIDropDownMenu("CommDKPAwardConfirmZoneDropDown", d);
+		f.zoneDropDown:SetPoint("TOPLEFT", d, "TOPLEFT", W.PAD + 2 * (COL_W + 8), -22)
+		DD:UIDropDownMenu_SetWidth(f.zoneDropDown, COL_W)
+		DD:UIDropDownMenu_JustifyText(f.zoneDropDown, "LEFT")
 
 	----------------------------------
-	-- Buttons
+	-- Buttons: Confirm (primary, 110) · Set Price (110) · Cancel (110, right)
 	----------------------------------
 
-		f.yesButton = CommDKP:CreateButton("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 15, L["CONFIRM"]);
-		f.setPriceButton = CommDKP:CreateButton("BOTTOMLEFT", f, "BOTTOMLEFT", 150, 15, "Set Price");
+		f.yesButton = CommDKP:CreateButton("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0, L["CONFIRM"]);
+		f.yesButton:SetSize(110, W.H)
+		W.StyleButton(f.yesButton, "primary")
+		f.setPriceButton = CommDKP:CreateButton("BOTTOMLEFT", content, "BOTTOMLEFT", 118, 0, "Set Price");
+		f.setPriceButton:SetSize(110, W.H)
 		f.setPriceButton:SetShown(false);
-		f.noButton = CommDKP:CreateButton("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 15, L["CANCEL"]);
+		f.noButton = CommDKP:CreateButton("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0, L["CANCEL"]);
+		f.noButton:SetSize(110, W.H)
 
 	return f;
 end
-
 
 -- this also populates all the drop downs
 function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
@@ -462,12 +488,11 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 	)
 
 	-- Create and bind the initialization function to the dropdown menu
-		LibDD:UIDropDownMenu_Initialize(core.AwardConfirm.team, 
+		DD:UIDropDownMenu_Initialize(core.AwardConfirm.team, 
 			function(self, level, menuList)
 				
-				local dropDownMenuItem = LibDD:UIDropDownMenu_CreateInfo()
+				local dropDownMenuItem = DD:UIDropDownMenu_CreateInfo()
 				dropDownMenuItem.func = self.SetValue
-				dropDownMenuItem.fontObject = "CommDKPSmallCenter"
 			
 				teamList = CommDKP:GetGuildTeamList()
 
@@ -478,17 +503,17 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 					dropDownMenuItem.arg2 = teamList[i][1] -- index
 					dropDownMenuItem.checked = teamList[i][1] == tonumber(CommDKP:GetCurrentTeamIndex())
 					dropDownMenuItem.isNotRadio = true
-					LibDD:UIDropDownMenu_AddButton(dropDownMenuItem)
+					DD:UIDropDownMenu_AddButton(dropDownMenuItem)
 				end
 			end
 		)
 		-- Show which team is currently the current one
-		LibDD:UIDropDownMenu_SetText(core.AwardConfirm.team, CommDKP:GetCurrentTeamName())
+		DD:UIDropDownMenu_SetText(core.AwardConfirm.team, CommDKP:GetCurrentTeamName())
 	
 	if player then
-		LibDD:UIDropDownMenu_SetText(core.AwardConfirm.player, "|c"..class.hex..player.."|r")
+		DD:UIDropDownMenu_SetText(core.AwardConfirm.player, "|c"..class.hex..player.."|r")
 	else
-		LibDD:UIDropDownMenu_SetText(core.AwardConfirm.player, "")
+		DD:UIDropDownMenu_SetText(core.AwardConfirm.player, "")
 	end
 
 	-- AD-12.6: flat list for small rosters, range submenus (with a correct checkmark) above FLAT_MAX.
@@ -501,8 +526,8 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 		return "ff444444"
 	end
 
-	LibDD:UIDropDownMenu_Initialize(core.AwardConfirm.player, function(self, level, menuList)
-		local filterName = LibDD:UIDropDownMenu_CreateInfo()
+	DD:UIDropDownMenu_Initialize(core.AwardConfirm.player, function(self, level, menuList)
+		local filterName = DD:UIDropDownMenu_CreateInfo()
 		filterName.func = self.SetValue
 
 		if #PlayerList <= FLAT_MAX then
@@ -511,7 +536,7 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 					local name = PlayerList[i]
 					local colored = "|c"..PlayerColorHex(name)..name.."|r"
 					filterName.text, filterName.arg1, filterName.arg2, filterName.checked, filterName.isNotRadio = colored, name, colored, name == player, true
-					LibDD:UIDropDownMenu_AddButton(filterName)
+					DD:UIDropDownMenu_AddButton(filterName)
 				end
 			end
 			return
@@ -532,87 +557,43 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 					if PlayerList[j] == player then inRange = true; break end
 				end
 				filterName.text, filterName.checked, filterName.menuList, filterName.hasArrow = strsub(PlayerList[min], 1, 1).."-"..strsub(PlayerList[max], 1, 1), inRange, i, true
-				LibDD:UIDropDownMenu_AddButton(filterName)
+				DD:UIDropDownMenu_AddButton(filterName)
 			end
 		else
 			for i=ranges[menuList], ranges[menuList]+19 do
 				if PlayerList[i] then
 					local colored = "|c"..PlayerColorHex(PlayerList[i])..PlayerList[i].."|r"
 					filterName.text, filterName.arg1, filterName.arg2, filterName.checked, filterName.isNotRadio = colored, PlayerList[i], colored, PlayerList[i] == player, true
-					LibDD:UIDropDownMenu_AddButton(filterName, level)
+					DD:UIDropDownMenu_AddButton(filterName, level)
 				end
 			end
 		end
 	end)
 
 	-- AD-12.5: ZONE and BOSS dropdowns driven by the static catalog + discovered encounters.
-	local function SetBossText()  LibDD:UIDropDownMenu_SetText(core.AwardConfirm.bossDropDown, curBoss or "") end
-	local function SetZoneText()  LibDD:UIDropDownMenu_SetText(core.AwardConfirm.zoneDropDown, curZone or "") end
+	local function SetBossText()  DD:UIDropDownMenu_SetText(core.AwardConfirm.bossDropDown, curBoss or "") end
+	local function SetZoneText()  DD:UIDropDownMenu_SetText(core.AwardConfirm.zoneDropDown, curZone or "") end
 	SetBossText(); SetZoneText()
 
 	-- BOSS: level 1 = bosses of curZone, then recent kills, then an "All Raids" section whose zones open level 2.
-	LibDD:UIDropDownMenu_Initialize(core.AwardConfirm.bossDropDown, function(self, level, menuList)
-		local info = LibDD:UIDropDownMenu_CreateInfo()
-		info.func, info.isNotRadio = self.SetValue, true
-		if (level or 1) == 1 then
-			local names, seen = CommDKP:GetZoneBossNames(curZone)
-			-- An ad-hoc/custom curBoss not in this zone's catalog stays visible (and checked) at the top.
-			if curBoss and curBoss ~= "" and not seen[curBoss] then
-				seen[curBoss] = true
-				info.text, info.arg1, info.arg2, info.checked = curBoss, curBoss, nil, true
-				LibDD:UIDropDownMenu_AddButton(info)
-			end
-			for _, n in ipairs(names) do
-				info.text, info.arg1, info.arg2, info.checked = n, n, nil, n == curBoss
-				LibDD:UIDropDownMenu_AddButton(info)
-			end
-			-- "Recent Kills" comes ONLY from actual recorded kills (BOSS_KILL / ENCOUNTER_END success).
-			-- core.LastKilledBoss is NOT used: it defaults to "Lucifron" and tracks Adjust-tab selections.
-			local recent = {}
-			for _, n in ipairs(core.LastKilledNPC or {}) do
-				if type(n) == "string" and n ~= "" and not seen[n] then recent[#recent + 1] = n; seen[n] = true end
-			end
-			if #recent > 0 then
-				local t = LibDD:UIDropDownMenu_CreateInfo()
-				t.text, t.isTitle, t.notCheckable = L["RECENTKILLS"] or "Recent Kills", true, true
-				LibDD:UIDropDownMenu_AddButton(t)
-				for _, n in ipairs(recent) do
-					info.text, info.arg1, info.arg2, info.checked = n, n, nil, n == curBoss
-					LibDD:UIDropDownMenu_AddButton(info)
-				end
-			end
-			local t = LibDD:UIDropDownMenu_CreateInfo()
-			t.text, t.isTitle, t.notCheckable = L["ALLRAIDS"] or "All Raids", true, true
-			LibDD:UIDropDownMenu_AddButton(t)
-			for _, z in ipairs(CommDKP:GetAwardZoneNames()) do
-				local sub = LibDD:UIDropDownMenu_CreateInfo()    -- fresh table: no func, so a click on the zone row only opens it
-				sub.text, sub.hasArrow, sub.menuList, sub.notCheckable = z, true, z, true
-				LibDD:UIDropDownMenu_AddButton(sub)
-			end
-		else
-			for _, n in ipairs(CommDKP:GetZoneBossNames(menuList)) do      -- menuList is the zone name
-				info.text, info.arg1, info.arg2, info.checked = n, n, menuList, (n == curBoss and menuList == curZone)
-				LibDD:UIDropDownMenu_AddButton(info, level)
-			end
-		end
-	end)
+	DD:UIDropDownMenu_Initialize(core.AwardConfirm.bossDropDown, function(self, level, menuList) CommDKP:PopulateBossDropdown(self, level, menuList, curBoss, curZone) end)
 
 	-- ZONE: flat list of every zone.
-	LibDD:UIDropDownMenu_Initialize(core.AwardConfirm.zoneDropDown, function(self, level, menuList)
-		local info = LibDD:UIDropDownMenu_CreateInfo()
+	DD:UIDropDownMenu_Initialize(core.AwardConfirm.zoneDropDown, function(self, level, menuList)
+		local info = DD:UIDropDownMenu_CreateInfo()
 		info.func, info.isNotRadio = self.SetValue, true
 		local extra = { curZone, core.CurrentRaidZone }
 		for _, z in pairs(core.RecentZones or {}) do extra[#extra + 1] = z end
 		for _, z in ipairs(CommDKP:GetAwardZoneNames(extra)) do
 			info.text, info.arg1, info.checked = z, z, z == curZone
-			LibDD:UIDropDownMenu_AddButton(info)
+			DD:UIDropDownMenu_AddButton(info)
 		end
 	end)
 
 	function core.AwardConfirm.player:SetValue(newValue, arg2) 	---- PLAYER dropdown function
 		if player ~= newValue then player = newValue end
-		LibDD:UIDropDownMenu_SetText(core.AwardConfirm.player, arg2)
-		LibDD:CloseDropDownMenus()
+		DD:UIDropDownMenu_SetText(core.AwardConfirm.player, arg2)
+		DD:CloseDropDownMenus()
 	end
 
 	-- arg2 = zone when the boss was picked from an "All Raids" submenu; otherwise the zone is unchanged.
@@ -620,14 +601,14 @@ function CommDKP:AwardConfirm(player, cost, boss, zone, loot, reassign)
 	function core.AwardConfirm.bossDropDown:SetValue(newValue, zone)
 		curBoss = newValue
 		if zone and zone ~= curZone then curZone = zone; SetZoneText() end
-		SetBossText(); LibDD:CloseDropDownMenus()
+		SetBossText(); DD:CloseDropDownMenus()
 	end
 
 	function core.AwardConfirm.zoneDropDown:SetValue(newValue)
 		curZone = newValue
 		local names, seen = CommDKP:GetZoneBossNames(newValue)
 		if #names > 0 and not (curBoss and seen[curBoss]) then curBoss = names[1]; SetBossText() end
-		SetZoneText(); LibDD:CloseDropDownMenus()
+		SetZoneText(); DD:CloseDropDownMenus()
 	end
 
 	core.AwardConfirm.yesButton:SetScript("OnClick", function()         -- Run when "Yes" is clicked

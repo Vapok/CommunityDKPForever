@@ -7,7 +7,8 @@ local bytesSent = 0
 local bytesTotal = 0
 local LibAceSerializer = LibStub:GetLibrary("AceSerializer-3.0")
 local LibDeflate = LibStub:GetLibrary("LibDeflate")
-local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (CommDKPBroadcastPlayerDropDown)
+local W = CommDKP.Widgets
 
 function CommDKP_Profile_Create(player, dkp, gained, spent, teamIndex)
 	local _teamIndex = teamIndex or core.DB.defaults.CurrentTeam;
@@ -25,7 +26,9 @@ function CommDKP_Profile_Create(player, dkp, gained, spent, teamIndex)
 		tempName = CommDKP:StripRealm(tempName)			-- AD-9.6: realm suffix optional; nil entries skipped
 		if tempName and CommDKP:SamePlayer(tempName, player) then
 			class = tempClass
-			table.insert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), { player=player, lifetime_spent=spent, lifetime_gained=gained, class=class, dkp=dkp, rank=10, spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], rankName="None", previous_dkp=0, })
+			local row = { player=player, lifetime_spent=spent, lifetime_gained=gained, class=class, dkp=dkp, rank=10, spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], rankName="None", previous_dkp=0, version="Unknown", }
+			CommDKP:HydratePlayerRow(row)					-- AD-26.4.2 P5: heal from known meta (BR-18.3)
+			table.insert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), row)
 
 			CommDKP:FilterDKPTable(core.currentSort, "reset")
 			CommDKP:ClassGraph_Update()
@@ -49,7 +52,9 @@ function CommDKP_Profile_Create(player, dkp, gained, spent, teamIndex)
 			tempName = CommDKP:StripRealm(tempName)
 			if tempName and CommDKP:SamePlayer(tempName, player) then
 				if not CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), player, "player") then
-					tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), { player=player, class=tempClass, dkp=dkp, previous_dkp=0, lifetime_gained=gained, lifetime_spent=spent, rank=10, rankName="None", spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], })
+					local row = { player=player, class=tempClass, dkp=dkp, previous_dkp=0, lifetime_gained=gained, lifetime_spent=spent, rank=10, rankName="None", spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], version="Unknown", }
+					CommDKP:HydratePlayerRow(row)			-- AD-26.4.2 P5
+					tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), row)
 					CommDKP:FilterDKPTable(core.currentSort, "reset")
 					CommDKP:ClassGraph_Update()
 					created = true
@@ -60,36 +65,29 @@ function CommDKP_Profile_Create(player, dkp, gained, spent, teamIndex)
 	end
 
 	if not created then
-		tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), { player=player, class=class, dkp=dkp, previous_dkp=0, lifetime_gained=gained, lifetime_spent=spent, rank=10, rankName="None", spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], })
+		local row = { player=player, class=class, dkp=dkp, previous_dkp=0, lifetime_gained=gained, lifetime_spent=spent, rank=10, rankName="None", spec=L["NOSPECREPORTED"], role=L["NOROLEDETECTED"], version="Unknown", }
+		CommDKP:HydratePlayerRow(row)						-- AD-26.4.2 P5
+		tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, _teamIndex), row)
 	end
 
 	return created
 end
 
 local function CommDKP_BroadcastFull_Status_Create()
-	-- UX §10.6.2: native template toast, pinned at FULLSCREEN_DIALOG (not a floater, no Esc binding).
-	local f = CommDKP:CreateForeverWindow("CommDKP_FullBroadcastStatus", 300, 100,
-		L["BCASTINGTABLES"], { floater = false, escape = false })
+	-- UX §12.4.9 / AD-16.4: "plaque" toast (300 x 92), no close button, pinned at FULLSCREEN_DIALOG (not a floater,
+	-- no Esc binding). Interior anchors to f.Content only (BR-9.4.4 style flip).
+	local f, content = CommDKP:CreateForeverWindow("CommDKP_FullBroadcastStatus", 300, 92,
+		L["BCASTINGTABLES"], { style = "plaque", floater = false, escape = false, noClose = true })
 	f:SetPoint("TOP", UIParent, "TOP", 0, -10);
 	f:SetFrameStrata("FULLSCREEN_DIALOG")    -- pinned; never cycled by FocusWindow
-	f.bcastHeader = f.TitleLabel             -- SetText(L["BCASTINGTABLES"]) now writes the title
+	f.bcastHeader = f.TitleLabel             -- §12.4.9: the duplicate body header is removed; SetText writes the title
 
-	f.status = CreateFrame("StatusBar", nil, f, "BackdropTemplate")
-	f.status:SetSize(200, 15)
-	CommDKP:ApplyBackdrop(f.status, "StatusBg", "StatusBg")
-	f.status:SetStatusBarTexture([[Interface\TargetingFrame\UI-TargetingFrame-BarFill]])
-	f.status:SetPoint("CENTER", f, "CENTER", 0, -6)
-
-	f.status.percentage = f:CreateFontString(nil, "OVERLAY")
-	f.status.percentage:SetFontObject("CommDKPLargeCenter");
-	f.status.percentage:SetPoint("TOP", f.status, "BOTTOM", 0, -9);
-	f.status.percentage:SetScale(0.6)
-
-	f.status.border = CreateFrame("Frame", nil, f.status, "BackdropTemplate");
-	f.status.border:SetPoint("CENTER", f.status, "CENTER");
-	f.status.border:SetFrameLevel(f.status:GetFrameLevel() + 1)   -- inherits the toast's strata (§10.6.2)
-	f.status.border:SetSize(200, 18);
-	CommDKP:ApplyBackdrop(f.status.border, "BorderOnly", "Clear", "WindowBorder")
+	-- §12.2.12 progress bar (18 px, full width) with the percentage inside it. f.status / f.status.percentage keep
+	-- their keys (SetMinMaxValues / SetStatusBarColor / OnUpdate / SetValue / percentage:SetText are unchanged).
+	f.status = W.CreateProgressBar(content, 284, 18)
+	f.status.Holder:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -20)
+	f.status.Holder:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, -20)
+	f.status.percentage = f.status.Text
 	return f
 end
 
@@ -144,9 +142,9 @@ function CommDKP_BroadcastFull_Init()
 	core.Broadcast = core.Broadcast or CommDKP_BroadcastFull_Create()
 	core.Broadcast:SetShown(not core.Broadcast:IsShown())
 
-	LibDD:UIDropDownMenu_Initialize(core.Broadcast.player, function(self, level, menuList)
+	DD:UIDropDownMenu_Initialize(core.Broadcast.player, function(self, level, menuList)
 		
-		local filterName = LibDD:UIDropDownMenu_CreateInfo()
+		local filterName = DD:UIDropDownMenu_CreateInfo()
 		local FLAT_MAX = 25		-- AD-12.6: flat list for small rosters
 
 		if #PlayerList <= FLAT_MAX then
@@ -156,7 +154,7 @@ function CommDKP_BroadcastFull_Init()
 					local name = PlayerList[i].player
 					local colored = "|c"..CommDKP:GetCColors(PlayerList[i].class).hex..name.."|r"
 					filterName.text, filterName.arg1, filterName.arg2, filterName.checked, filterName.isNotRadio = colored, name, colored, name == player, true
-					LibDD:UIDropDownMenu_AddButton(filterName)
+					DD:UIDropDownMenu_AddButton(filterName)
 				end
 			end
 			return
@@ -180,7 +178,7 @@ function CommDKP_BroadcastFull_Init()
 					if PlayerList[j].player == player then inRange = true; break end
 				end
 				filterName.text, filterName.checked, filterName.menuList, filterName.hasArrow = strsub(PlayerList[min].player, 1, 1).."-"..strsub(PlayerList[max].player, 1, 1), inRange, i, true
-				LibDD:UIDropDownMenu_AddButton(filterName)
+				DD:UIDropDownMenu_AddButton(filterName)
 			end
 			
 		else
@@ -190,17 +188,17 @@ function CommDKP_BroadcastFull_Init()
 					local c = CommDKP:GetCColors(PlayerList[i].class)
 
 					filterName.text, filterName.arg1, filterName.arg2, filterName.checked, filterName.isNotRadio = "|c"..c.hex..PlayerList[i].player.."|r", PlayerList[i].player, "|c"..c.hex..PlayerList[i].player.."|r", PlayerList[i].player == player, true
-					LibDD:UIDropDownMenu_AddButton(filterName, level)
+					DD:UIDropDownMenu_AddButton(filterName, level)
 				end
 			end
 		end
 	end)
-	LibDD:UIDropDownMenu_SetText(core.Broadcast.player, "")
+	DD:UIDropDownMenu_SetText(core.Broadcast.player, "")
 
 	function core.Broadcast.player:SetValue(newValue, arg2) 	---- PLAYER dropdown function
 		if player ~= newValue then player = newValue end
-		LibDD:UIDropDownMenu_SetText(core.Broadcast.player, arg2)
-		LibDD:CloseDropDownMenus()
+		DD:UIDropDownMenu_SetText(core.Broadcast.player, arg2)
+		DD:CloseDropDownMenus()
 	end
 
 	core.Broadcast.confirmButton:SetScript("OnClick", function()
@@ -222,8 +220,16 @@ function CommDKP_BroadcastFull_Init()
 				Loot=CommDKP:GetTable(CommDKP_Loot, true), 
 				Archive=CommDKP:GetTable(CommDKP_Archive, true), 
 				MinBids=CommDKP:FormatPriceTable(), 
-				Teams=teams 
+				Teams=teams
 			}
+			-- AD-36.3.1 (BR-28.9a, CM-04): the payload carries array copies WITHOUT the non-array .seed key. Rows are shared
+			-- (SendData serializes synchronously); the live tables keep their .seed until the existing post-send zeroing.
+			-- Kept outside the literal above (H109 evaluates that literal on its own).
+			for _, k in ipairs({ "DKP", "Loot" }) do
+				local src, copy = tempTable[k], {}
+				for i = 1, #src do copy[i] = src[i] end
+				tempTable[k] = copy
+			end
 		elseif core.Broadcast.mergeCheckbox:GetChecked() == true then
 			tempTable = CommDKP_MergeTable_Create()
 		end
@@ -256,6 +262,7 @@ function CommDKP_BroadcastFull_Init()
 			if core.Broadcast.mergeCheckbox:GetChecked() == true then
 				CommDKP.Sync:SendData("CommDKPMerge", tempTable)
 				CommDKP_SyncDeleted()
+				if IsInGuild() and CommDKP.SendSeedData then CommDKP:SendSeedData() end
 				core.Broadcast:Hide()
 				CommDKP_BroadcastFull_Status()
 			elseif core.Broadcast.fullCheckbox:GetChecked() == true then
@@ -264,7 +271,8 @@ function CommDKP_BroadcastFull_Init()
 					button1 = L["YES"],
 					button2 = L["NO"],
 					OnAccept = function()
-						CommDKP.Sync:SendData("CommDKPAllTabs", tempTable, player)
+						CommDKP.Sync:SendData("CommDKPAllTabs", tempTable)
+						if IsInGuild() and CommDKP.SendSeedData then CommDKP:SendSeedData() end
 						core.Broadcast:Hide()
 						CommDKP:GetTable(CommDKP_DKPHistory, true).seed = 0
 						CommDKP:GetTable(CommDKP_Loot, true).seed = 0
@@ -295,27 +303,22 @@ function CommDKP_BroadcastFull_Callback(arg1, arg2, arg3)
 end
 
 function CommDKP_BroadcastFull_Create()
-	-- UX §10.6.1: native template window (modal floater, returns focus to UIConfig on hide).
-	local f = CommDKP:CreateForeverWindow("CommDKP_FullBroadcastWindow", 340, 270,
-		"CommunityDKP Forever \226\128\148 " .. L["BROADCASTTABLES"])
+	-- UX §12.4.6 / AD-16.4: "window" chrome (340 x 270, modal floater, returns focus to UIConfig on hide).
+	-- One "Send To" card + the action row; every interior control anchors to f.Content (BR-9.4.4).
+	local f, content = CommDKP:CreateForeverWindow("CommDKP_FullBroadcastWindow", 340, 270, L["BROADCASTTABLES"])
 	f:SetPoint("TOP", UIParent, "TOP", 0, -200);
 	f.bcastHeader = f.TitleLabel
 
-	f.tocontainer = CommDKP:CreateContainer(f, "CommDKP_Broadcast_tocontainer", "Broadcast to:")
-    f.tocontainer:SetPoint("TOP", f, "TOP", 0, -48)
-    f.tocontainer:SetSize(250, 64)
+	local card = W.CreateCard(content, L["CARDSENDTO"], 316, 152)
+	card:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+	f.tocontainer, f.datacontainer = card, card     -- legacy container keys (both groups now live in the one card)
+	local b = card.Body
 
-		-- to player
-		f.playerHeader = f:CreateFontString(nil, "OVERLAY")
-		f.playerHeader:SetFontObject("CommDKPLargeLeft");
-		f.playerHeader:SetScale(0.6)
-		f.playerHeader:SetPoint("TOPLEFT", f.tocontainer, "TOPLEFT", 40, -25);
-		f.playerHeader:SetText(L["PLAYER"])
-
-		f.playerCheckbox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
-		f.playerCheckbox:SetPoint("RIGHT", f.playerHeader, "LEFT", 0, 0)
+		-- to player: the four CommDKPLargeLeft headers become the checkboxes' own labels (same strings, §12.4.6)
+		f.playerCheckbox = W.CreateCheckbox(b, nil, L["PLAYER"])
+		f.playerCheckbox:SetPoint("TOPLEFT", b, "TOPLEFT", W.PAD, -13)
 		f.playerCheckbox:SetChecked(false)
-		f.playerCheckbox:SetScale(0.6)
+		f.playerHeader = f.playerCheckbox.text
 		f.playerCheckbox:SetScript("OnClick", function(self)
 			if self:GetChecked() == true then
 				f.player:Show()
@@ -334,23 +337,17 @@ function CommDKP_BroadcastFull_Create()
 			GameTooltip:Hide()
 		end)
 
-		f.player = LibDD:Create_UIDropDownMenu("CommDKPBroadcastPlayerDropDown", f);
-		f.player:SetPoint("TOPRIGHT", f.tocontainer, "TOPRIGHT", 5, -7)
-		LibDD:UIDropDownMenu_SetWidth(f.player, 150)
-		LibDD:UIDropDownMenu_JustifyText(f.player, "LEFT")
+		f.player = DD:Create_UIDropDownMenu("CommDKPBroadcastPlayerDropDown", b);
+		f.player:SetPoint("TOPLEFT", b, "TOPLEFT", 120, -10)
+		DD:UIDropDownMenu_SetWidth(f.player, 178)
+		DD:UIDropDownMenu_JustifyText(f.player, "LEFT")
 		f.player:Hide()
 
 		-- to guild
-		f.guildHeader = f:CreateFontString(nil, "OVERLAY")
-		f.guildHeader:SetFontObject("CommDKPLargeLeft");
-		f.guildHeader:SetScale(0.6)
-		f.guildHeader:SetPoint("TOPLEFT", f.playerHeader, "BOTTOMLEFT", 0, -15);
-		f.guildHeader:SetText(L["GUILD"])
-
-		f.guildCheckbox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
-		f.guildCheckbox:SetPoint("RIGHT", f.guildHeader, "LEFT", 0, 0)
+		f.guildCheckbox = W.CreateCheckbox(b, nil, L["GUILD"])
+		f.guildCheckbox:SetPoint("TOPLEFT", b, "TOPLEFT", W.PAD, -41)
 		f.guildCheckbox:SetChecked(false)
-		f.guildCheckbox:SetScale(0.6)
+		f.guildHeader = f.guildCheckbox.text
 		f.guildCheckbox:SetScript("OnClick", function(self)
 			if self:GetChecked() == true then
 				f.playerCheckbox:SetChecked(false)
@@ -367,20 +364,17 @@ function CommDKP_BroadcastFull_Create()
 			GameTooltip:Hide()
 		end)
 
-	f.datacontainer = CommDKP:CreateContainer(f, "CommDKP_Broadcast_tocontainer", "Data:")
-    f.datacontainer:SetPoint("TOPLEFT", f.tocontainer, "BOTTOMLEFT", 0, -18)
-    f.datacontainer:SetSize(250, 64)
+		-- 1 px rule between the recipient and the data choices
+		f.sendRule = b:CreateTexture(nil, "BORDER")
+		f.sendRule:SetPoint("TOPLEFT", b, "TOPLEFT", W.PAD, -66)
+		f.sendRule:SetPoint("TOPRIGHT", b, "TOPRIGHT", -W.PAD, -66)
+		f.sendRule:SetHeight(1)
+		f.sendRule:SetColorTexture(unpack((core.Palette or core.Palettes.Forever).rule))
 
-    	f.mergeHeader = f:CreateFontString(nil, "OVERLAY")
-		f.mergeHeader:SetFontObject("CommDKPLargeLeft");
-		f.mergeHeader:SetScale(0.6)
-		f.mergeHeader:SetPoint("TOPLEFT", f.datacontainer, "TOPLEFT", 40, -25);
-		f.mergeHeader:SetText(L["MERGE2WEEKS"])
-
-		f.mergeCheckbox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
-		f.mergeCheckbox:SetPoint("RIGHT", f.mergeHeader, "LEFT", 0, 0)
+		f.mergeCheckbox = W.CreateCheckbox(b, nil, L["MERGE2WEEKS"])
+		f.mergeCheckbox:SetPoint("TOPLEFT", b, "TOPLEFT", W.PAD, -77)
 		f.mergeCheckbox:SetChecked(false)
-		f.mergeCheckbox:SetScale(0.6)
+		f.mergeHeader = f.mergeCheckbox.text
 		f.mergeCheckbox:SetScript("OnClick", function(self)
 			if self:GetChecked() == true then
 				f.fullCheckbox:SetChecked(false)
@@ -397,16 +391,10 @@ function CommDKP_BroadcastFull_Create()
 			GameTooltip:Hide()
 		end)
 
-		f.fullHeader = f:CreateFontString(nil, "OVERLAY")
-		f.fullHeader:SetFontObject("CommDKPLargeLeft");
-		f.fullHeader:SetScale(0.6)
-		f.fullHeader:SetPoint("TOPLEFT", f.mergeHeader, "BOTTOMLEFT", 0, -15);
-		f.fullHeader:SetText(L["FULLBROADCAST"])
-
-		f.fullCheckbox = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
-		f.fullCheckbox:SetPoint("RIGHT", f.fullHeader, "LEFT", 0, 0)
+		f.fullCheckbox = W.CreateCheckbox(b, nil, L["FULLBROADCAST"])
+		f.fullCheckbox:SetPoint("TOPLEFT", b, "TOPLEFT", W.PAD, -101)
 		f.fullCheckbox:SetChecked(false)
-		f.fullCheckbox:SetScale(0.6)
+		f.fullHeader = f.fullCheckbox.text
 		f.fullCheckbox:SetScript("OnClick", function(self)
 			if self:GetChecked() == true then
 				f.mergeCheckbox:SetChecked(false)
@@ -423,8 +411,12 @@ function CommDKP_BroadcastFull_Create()
 			GameTooltip:Hide()
 		end)
 
-	f.confirmButton = CommDKP:CreateButton("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 14, L["BROADCAST"]);
-	f.cancelButton = CommDKP:CreateButton("BOTTOMRIGHT", f, "BOTTOMRIGHT", -20, 14, L["CANCEL"]);
+	-- Action row: Broadcast (primary, 120) left, Cancel (120) right.
+	f.confirmButton = CommDKP:CreateButton("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0, L["BROADCAST"]);
+	f.confirmButton:SetSize(120, W.H)
+	W.StyleButton(f.confirmButton, "primary")
+	f.cancelButton = CommDKP:CreateButton("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, 0, L["CANCEL"]);
+	f.cancelButton:SetSize(120, W.H)
 
 	return f
 end

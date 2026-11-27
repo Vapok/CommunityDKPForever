@@ -364,6 +364,17 @@ local BACKDROP_DIALOG_DARK = {
 		edgeSize = 32,
 		insets = { left = 11, right = 12, top = 12, bottom = 9, },
 }
+-- CommunityDKPForever (CDKP-019, AD-27.2.4): the 12.x FrameXML may not define the Blizzard tooltip backdrop /
+-- colour globals. SetBackdrop(nil) silently clears the MENU background and indexing a nil colour table errors at
+-- load (aborting L_DropDownList2). Local copies of the stock values are used only when the globals are nil.
+local LDD_TOOLTIP_BACKDROP = {
+	bgFile = "Interface\\Tooltips\\UI-Tooltip-Background",
+	edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+	tile = true, tileEdge = true, tileSize = 16, edgeSize = 16,
+	insets = { left = 5, right = 5, top = 5, bottom = 5 },
+}
+local LDD_TOOLTIP_BORDER_COLOR = { r = 1, g = 1, b = 1 }
+local LDD_TOOLTIP_BG_COLOR     = { r = 0.09, g = 0.09, b = 0.19 }
 local function creatre_DropDownList(name, parent)
 	local f = _G[name] or CreateFrame("Button", name)
 	f:SetParent(parent or nil)
@@ -380,9 +391,11 @@ local function creatre_DropDownList(name, parent)
 	--local fmb = _G[name.."MenuBackdrop"] or CreateFrame("Frame", name.."MenuBackdrop", f, BackdropTemplateMixin and "TooltipBackdropTemplate" or nil)
 	local fmb = _G[name.."MenuBackdrop"] or CreateFrame("Frame", name.."MenuBackdrop", f, BackdropTemplateMixin and "BackdropTemplate" or nil)
 	fmb:SetAllPoints()
-	fmb:SetBackdrop(BACKDROP_TOOLTIP_16_16_5555)
-	fmb:SetBackdropBorderColor(TOOLTIP_DEFAULT_COLOR.r, TOOLTIP_DEFAULT_COLOR.g, TOOLTIP_DEFAULT_COLOR.b)
-	fmb:SetBackdropColor(TOOLTIP_DEFAULT_BACKGROUND_COLOR.r, TOOLTIP_DEFAULT_BACKGROUND_COLOR.g, TOOLTIP_DEFAULT_BACKGROUND_COLOR.b)
+	fmb:SetBackdrop(_G.BACKDROP_TOOLTIP_16_16_5555 or LDD_TOOLTIP_BACKDROP)
+	local bc  = _G.TOOLTIP_DEFAULT_COLOR or LDD_TOOLTIP_BORDER_COLOR
+	local bgc = _G.TOOLTIP_DEFAULT_BACKGROUND_COLOR or LDD_TOOLTIP_BG_COLOR
+	fmb:SetBackdropBorderColor(bc.r, bc.g, bc.b)
+	fmb:SetBackdropColor(bgc.r, bgc.g, bgc.b)
 	f.MenuBackdrop = fmb
 	
 	f.Button1 = _G[name.."Button1"] or create_MenuButton(name.."Button1", f)

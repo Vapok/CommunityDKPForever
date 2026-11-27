@@ -5,6 +5,8 @@ local L = core.L;
 
 local curReason;
 local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (reasonDropDown, BossKilledDropdown)
+local W = CommDKP.Widgets
 
 function CommDKP:AdjustDKP(value)
 	local adjustReason = curReason;
@@ -139,85 +141,119 @@ end
 local function RaidTimerPopout_Create()
 	if not CommDKP.RaidTimerPopout then
 
-		-- UX §10.8: native template window (floater, no Esc: persistent raid HUD readout). Created hidden.
-		local f = CommDKP:CreateForeverWindow("CommDKP_RaidTimerPopout", 170, 72, L["RAIDTIMER"], { escape = false })
+		-- UX §12.4.10 / AD-16.4: "plaque" HUD readout (190 x 74; floater, no Esc, no [X]). Created hidden.
+		-- The [«] dock-back icon button sits in the close slot; no SetScale hack (size comes from the font object).
+		local f, content = CommDKP:CreateForeverWindow("CommDKP_RaidTimerPopout", 190, 74, L["RAIDTIMER"],
+			{ style = "plaque", escape = false, noClose = true })
 		CommDKP.RaidTimerPopout = f
 		f:SetPoint("RIGHT", UIParent, "RIGHT", -300, 100)
-		-- OnHide covers every close path ([X], the "<" toggle, any future hide); ">" twice is idempotent.
+		-- OnHide covers every close path (the [«] dock-back, the "<" toggle, any future hide); ">" twice is idempotent.
 		f:HookScript("OnHide", function()
 			CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetText(">")
 		end)
 
-		-- Raid Timer Output
-		f.Output = f:CreateFontString(nil, "OVERLAY")
-		f.Output:SetFontObject("CommDKPLargeLeft"); f.Output:SetScale(0.8)
-		f.Output:SetPoint("CENTER", f, "CENTER", -1, -10)   -- = center of InsetBg
-		f.Output:SetText("|cff00ff0000:00:00|r")
+		f.PopIn = W.CreateIconButton(f, "Interface\\Buttons\\UI-SpellbookIcon-PrevPage-Up", L["POPOUTTIMER"], function()
+			PlaySound(808)
+			f:Hide()
+		end)
+		f.PopIn:SetSize(18, 18)
+		f.PopIn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -4, -4)
+
+		-- Raid Timer Output: Readout style (green from the logic's color codes), left
+		f.Output = W.CreateText(content, "readout", "|cff00ff0000:00:00|r", "LEFT")
+		f.Output:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 4, 2)
+
+		-- "Bonus" caption over the bonus value, right. Display-only mirror of the Raid Timer card's Bonus readout,
+		-- refreshed twice a second while the popout is visible (RaidTimer.lua stays untouched; no hooks).
+		f.BonusHeader = W.CreateText(content, "caption", L["BONUS"], "RIGHT", "textMuted")
+		f.BonusHeader:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, -2)
+		f.Bonus = W.CreateText(content, "readout", nil, "RIGHT")
+		f.Bonus:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", -4, 2)
+		local elapsedSinceSync = 1
+		f:HookScript("OnUpdate", function(_, elapsed)
+			elapsedSinceSync = elapsedSinceSync + (elapsed or 0)
+			if elapsedSinceSync < 0.5 then return end
+			elapsedSinceSync = 0
+			local src = CommDKP.ConfigTab2.RaidTimerContainer and CommDKP.ConfigTab2.RaidTimerContainer.Bonus
+			if src then f.Bonus:SetText(W.SafeText(src:GetText())) end
+		end)
 	else
 		CommDKP.RaidTimerPopout:Show()
 	end
 end
 
 function CommDKP:AdjustDKPTab_Create()
-	CommDKP.ConfigTab2.header = CommDKP.ConfigTab2:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.header:SetPoint("TOPLEFT", CommDKP.ConfigTab2, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab2.header:SetFontObject("CommDKPLargeCenter")
-	CommDKP.ConfigTab2.header:SetText(L["ADJUSTDKP"]);
-	CommDKP.ConfigTab2.header:SetScale(1.2)
+	-- UX §12.3.3: Manual Adjustment (0,0) 270 x 306 · Weekly DKP Decay (0,314) 270 x 168 · Raid Timer (278,0) 256 x 482 (AD-19.2 012c).
+	-- No in-pane heading (Q7): the page header is the only title.
+	local INNER = 270 - 6 - 2 * W.PAD        -- usable body width of a 270 px card (240)
+	local manualCard = W.CreateCard(CommDKP.ConfigTab2, L["CARDMANUALADJ"], 270, 306)
+	manualCard:SetPoint("TOPLEFT", CommDKP.ConfigTab2, "TOPLEFT", 0, 0)
+	CommDKP.ConfigTab2.ManualCard = manualCard
+	local mBody = manualCard.Body
+	local decayCard = W.CreateCard(CommDKP.ConfigTab2, L["WEEKLYDKPDECAY"], 270, 168)
+	decayCard:SetPoint("TOPLEFT", CommDKP.ConfigTab2, "TOPLEFT", 0, -314)
+	CommDKP.ConfigTab2.DecayCard = decayCard
+	local dBody = decayCard.Body
 
-	CommDKP.ConfigTab2.description = CommDKP.ConfigTab2:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.description:SetPoint("TOPLEFT", CommDKP.ConfigTab2.header, "BOTTOMLEFT", 7, -10);
-	CommDKP.ConfigTab2.description:SetWidth(400)
-	CommDKP.ConfigTab2.description:SetFontObject("CommDKPNormalLeft")
-	CommDKP.ConfigTab2.description:SetText(L["ADJUSTDESC"]); 
+	-- AD-20.3.2 (CDKP-013b, BR-13.3.3): the help caption is the card's intro; every control below is anchored to its bottom.
+	CommDKP.ConfigTab2.description = W.CreateCaption(mBody, L["ADJUSTDESC"], 4)   -- §12.2.12 help caption (3rd arg ignored, BR-12.3.1)
+	CommDKP.ConfigTab2.description:SetWidth(INNER)                                 -- width before measuring (LayoutManualCard)
+	CommDKP.ConfigTab2.description:SetPoint("TOPLEFT", mBody, "TOPLEFT", W.PAD, -10);
+	manualCard:EnableMouse(true)
+	manualCard:SetScript("OnEnter", function(self)              -- full-text tooltip
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
+		GameTooltip:SetText(L["CARDMANUALADJ"], 1, 0.82, 0, 1, true);
+		GameTooltip:AddLine(L["ADJUSTDESC"], 1.0, 1.0, 1.0, true);
+		GameTooltip:Show();
+	end)
+	manualCard:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 	-- Reason DROPDOWN box 
 	-- Create the dropdown, and configure its appearance
-	CommDKP.ConfigTab2.reasonDropDown = LibDD:Create_UIDropDownMenu("CommDKPConfigReasonDropDown", CommDKP.ConfigTab2);
-	CommDKP.ConfigTab2.reasonDropDown:SetPoint("TOPLEFT", CommDKP.ConfigTab2.description, "BOTTOMLEFT", -23, -60)
-	LibDD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab2.reasonDropDown, 150)
-	LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.reasonDropDown, L["SELECTREASON"])
+	CommDKP.ConfigTab2.reasonDropDown = DD:Create_UIDropDownMenu("CommDKPConfigReasonDropDown", mBody);
+	DD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab2.reasonDropDown, INNER)
+	DD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.reasonDropDown, L["SELECTREASON"])
 
 	-- Create and bind the initialization function to the dropdown menu
-		LibDD:UIDropDownMenu_Initialize(CommDKP.ConfigTab2.reasonDropDown, function(self, level, menuList)
+		DD:UIDropDownMenu_Initialize(CommDKP.ConfigTab2.reasonDropDown, function(self, level, menuList)
 		
-		local reason = LibDD:UIDropDownMenu_CreateInfo()
+		local reason = DD:UIDropDownMenu_CreateInfo()
 		reason.func = self.SetValue
-		reason.fontObject = "CommDKPSmallCenter"
+
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["ONTIMEBONUS"], L["ONTIMEBONUS"], L["ONTIMEBONUS"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["BOSSKILLBONUS"], L["BOSSKILLBONUS"], L["BOSSKILLBONUS"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["RAIDCOMPLETIONBONUS"], L["RAIDCOMPLETIONBONUS"], L["RAIDCOMPLETIONBONUS"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["NEWBOSSKILLBONUS"], L["NEWBOSSKILLBONUS"], L["NEWBOSSKILLBONUS"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["CORRECTINGERROR"], L["CORRECTINGERROR"], L["CORRECTINGERROR"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["DKPADJUST"], L["DKPADJUST"], L["DKPADJUST"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["UNEXCUSEDABSENCE"], L["UNEXCUSEDABSENCE"], L["UNEXCUSEDABSENCE"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.checked, reason.isNotRadio = L["OTHER"], L["OTHER"], L["OTHER"] == curReason, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 	end)
 
 	-- Dropdown Menu Function
 	function CommDKP.ConfigTab2.reasonDropDown:SetValue(newValue)
 		if curReason ~= newValue then curReason = newValue else curReason = nil end
 
-		LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.reasonDropDown, curReason)
+		DD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.reasonDropDown, curReason)
 
 		if (curReason == L["ONTIMEBONUS"]) then CommDKP.ConfigTab2.addDKP:SetNumber(core.DB.DKPBonus.OnTimeBonus); CommDKP.ConfigTab2.BossKilledDropdown:Hide()
 		elseif (curReason == L["BOSSKILLBONUS"]) then
 			CommDKP.ConfigTab2.addDKP:SetNumber(core.DB.DKPBonus.BossKillBonus);
 			CommDKP.ConfigTab2.BossKilledDropdown:Show()
-			LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, core.CurrentRaidZone..": "..core.LastKilledBoss)
+			DD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, core.CurrentRaidZone..": "..core.LastKilledBoss)
 		elseif (curReason == L["RAIDCOMPLETIONBONUS"]) then CommDKP.ConfigTab2.addDKP:SetNumber(core.DB.DKPBonus.CompletionBonus); CommDKP.ConfigTab2.BossKilledDropdown:Hide()
 		elseif (curReason == L["NEWBOSSKILLBONUS"]) then
 			CommDKP.ConfigTab2.addDKP:SetNumber(core.DB.DKPBonus.NewBossKillBonus);
 			CommDKP.ConfigTab2.BossKilledDropdown:Show()
-			LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, core.CurrentRaidZone..": "..core.LastKilledBoss)
+			DD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, core.CurrentRaidZone..": "..core.LastKilledBoss)
 		elseif (curReason == L["UNEXCUSEDABSENCE"]) then CommDKP.ConfigTab2.addDKP:SetNumber(core.DB.DKPBonus.UnexcusedAbsence); CommDKP.ConfigTab2.BossKilledDropdown:Hide()
 		else CommDKP.ConfigTab2.addDKP:SetText(""); CommDKP.ConfigTab2.BossKilledDropdown:Hide() end
 
@@ -242,69 +278,54 @@ function CommDKP:AdjustDKPTab_Create()
 		GameTooltip:Hide()
 	end)
 
-	CommDKP.ConfigTab2.reasonHeader = CommDKP.ConfigTab2:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.reasonHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.reasonDropDown, "TOPLEFT", 25, 0);
-	CommDKP.ConfigTab2.reasonHeader:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.reasonHeader:SetText(L["REASONFORADJUSTMENT"]..":")
+	CommDKP.ConfigTab2.reasonHeader = W.CreateText(mBody, "label", L["REASONFORADJUSTMENT"], "LEFT")
+	CommDKP.ConfigTab2.reasonHeader:SetPoint("TOPLEFT", CommDKP.ConfigTab2.description, "BOTTOMLEFT", 0, -10);   -- AD-20.3.2
+	local reasonHeader = CommDKP.ConfigTab2.reasonHeader     -- anchor of the control group (intra-group offsets unchanged)
+	CommDKP.ConfigTab2.reasonDropDown:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -16)
 
 	-- Other Reason Editbox. Hidden unless "Other" is selected in dropdown
 
-	CommDKP.ConfigTab2.otherReason = CreateFrame("EditBox", nil, CommDKP.ConfigTab2, "BackdropTemplate")
+	-- AD-16 B5: the hint is a placeholder (never written into the box), so GetText() is "" until the officer types.
+	CommDKP.ConfigTab2.otherReason = CreateFrame("EditBox", nil, mBody)
 
-	CommDKP.ConfigTab2.otherReason:SetPoint("TOPLEFT", CommDKP.ConfigTab2.reasonDropDown, "BOTTOMLEFT", 19, 2)     
+	CommDKP.ConfigTab2.otherReason:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -44)     -- conditional slot (shared with BossKilledDropdown)
 	CommDKP.ConfigTab2.otherReason:SetAutoFocus(false)
 	CommDKP.ConfigTab2.otherReason:SetMultiLine(false)
-	CommDKP.ConfigTab2.otherReason:SetSize(225, 24)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.otherReason, "Panel", "InputBg", "InputBorder")
+	CommDKP.ConfigTab2.otherReason:SetSize(INNER, W.H)
 	CommDKP.ConfigTab2.otherReason:SetMaxLetters(50)
-	CommDKP.ConfigTab2.otherReason:SetTextColor(0.4, 0.4, 0.4, 1)
-	CommDKP.ConfigTab2.otherReason:SetFontObject("CommDKPNormalLeft")
-	CommDKP.ConfigTab2.otherReason:SetTextInsets(10, 10, 5, 5)
-	CommDKP.ConfigTab2.otherReason:SetText(L["ENTEROTHERREASONHERE"])
 	CommDKP.ConfigTab2.otherReason:SetScript("OnEscapePressed", function(self)    -- clears text and focus on esc
 		self:ClearFocus()
 	end)
-	CommDKP.ConfigTab2.otherReason:SetScript("OnEditFocusGained", function(self)
-		if (self:GetText() == L["ENTEROTHERREASONHERE"]) then
-			self:SetText("");
-			self:SetTextColor(1, 1, 1, 1)
-		end
-	end)
-	CommDKP.ConfigTab2.otherReason:SetScript("OnEditFocusLost", function(self)
-		if (self:GetText() == "") then
-			self:SetText(L["ENTEROTHERREASONHERE"])
-			self:SetTextColor(0.4, 0.4, 0.4, 1)
-		end
-	end)
+	W.StyleEditBox(CommDKP.ConfigTab2.otherReason, { placeholder = L["ENTEROTHERREASONHERE"], align = "LEFT" })
 	CommDKP.ConfigTab2.otherReason:Hide();
 
 	-- Boss Killed Dropdown - Hidden unless "Boss Kill Bonus" or "New Boss Kill Bonus" is selected
 	-- Killing a boss on the list will auto select that boss
-	CommDKP.ConfigTab2.BossKilledDropdown = LibDD:Create_UIDropDownMenu("CommDKPBossKilledDropdown", CommDKP.ConfigTab2);
-	CommDKP.ConfigTab2.BossKilledDropdown:SetPoint("TOPLEFT", CommDKP.ConfigTab2.reasonDropDown, "BOTTOMLEFT", 0, 2)
+	CommDKP.ConfigTab2.BossKilledDropdown = DD:Create_UIDropDownMenu("CommDKPBossKilledDropdown", mBody);
+	CommDKP.ConfigTab2.BossKilledDropdown:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -44)
 	CommDKP.ConfigTab2.BossKilledDropdown:Hide()
-	LibDD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab2.BossKilledDropdown, 210)
-	LibDD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, L["SELECTBOSS"])
+	DD:UIDropDownMenu_SetWidth(CommDKP.ConfigTab2.BossKilledDropdown, INNER)
+	DD:UIDropDownMenu_SetText(CommDKP.ConfigTab2.BossKilledDropdown, L["SELECTBOSS"])
 
-	LibDD:UIDropDownMenu_Initialize(CommDKP.ConfigTab2.BossKilledDropdown, function(self, level, menuList)
+	DD:UIDropDownMenu_Initialize(CommDKP.ConfigTab2.BossKilledDropdown, function(self, level, menuList)
 		
-		local boss = LibDD:UIDropDownMenu_CreateInfo()
-		boss.fontObject = "CommDKPSmallCenter"
+		local boss = DD:UIDropDownMenu_CreateInfo()
+
 		if (level or 1) == 1 then
 			-- AD-11.4: static raid zones (TBC removed), then discovered Forever raids
 			for _, key in ipairs(core.RaidMenuOrder) do
 				local zone = core.ZoneList[core.RaidZoneIndex[key]]
 				boss.text, boss.checked, boss.menuList, boss.hasArrow = zone, core.CurrentRaidZone == zone, key, true
-				LibDD:UIDropDownMenu_AddButton(boss)
+				DD:UIDropDownMenu_AddButton(boss)
 			end
 			local custom = CommDKP:GetCustomEncounterZones()
 			if #custom > 0 then
-				local title = LibDD:UIDropDownMenu_CreateInfo()		-- separate table: isTitle must not leak into `boss`
+				local title = DD:UIDropDownMenu_CreateInfo()		-- separate table: isTitle must not leak into `boss`
 				title.text, title.isTitle, title.notCheckable = L["DISCOVEREDRAIDS"] or "Discovered Raids", true, true
-				LibDD:UIDropDownMenu_AddButton(title)
+				DD:UIDropDownMenu_AddButton(title)
 				for _, zone in ipairs(custom) do
 					boss.text, boss.checked, boss.menuList, boss.hasArrow = zone, core.CurrentRaidZone == zone, "CUSTOM:"..zone, true
-					LibDD:UIDropDownMenu_AddButton(boss)
+					DD:UIDropDownMenu_AddButton(boss)
 				end
 			end
 		else
@@ -317,20 +338,21 @@ function CommDKP:AdjustDKPTab_Create()
 				for i = 1, #core.BossList[menuList] do
 					local name = core.BossList[menuList][i]
 					seen[name] = true
-					boss.text, boss.arg1, boss.checked = name, core.EncounterList[menuList][i], name == core.LastKilledBoss
-					LibDD:UIDropDownMenu_AddButton(boss, level)
+					boss.text, boss.arg1, boss.arg2, boss.checked = name, menuList, i, name == core.LastKilledBoss   -- AD-18.3: (key, index)
+					DD:UIDropDownMenu_AddButton(boss, level)
 				end
 			end
 			for _, e in ipairs(CommDKP:GetCustomBosses(zone, seen)) do	-- discovered bosses (merged into the static zones too)
-				boss.text, boss.arg1, boss.checked = e.name, e.id, (e.name == core.LastKilledBoss and core.CurrentRaidZone == zone)
-				LibDD:UIDropDownMenu_AddButton(boss, level)
+				boss.text, boss.arg1, boss.arg2, boss.checked = e.name, e.id, zone, (e.name == core.LastKilledBoss and core.CurrentRaidZone == zone)
+				DD:UIDropDownMenu_AddButton(boss, level)
 			end
 		end
 	end)
 
 	-- Called through boss.func with the menu button as `self`, so it must not use `self`.
-	function CommDKP.ConfigTab2.BossKilledDropdown:SetValue(newValue)
-		local zone, bossName = CommDKP:ResolveEncounter(newValue)	-- static IDs, WORLD name strings, and custom IDs
+	-- AD-18.3: (raidKey, index) for static rows, (encounterID, zone) for discovered rows; a bare ID still works.
+	function CommDKP.ConfigTab2.BossKilledDropdown:SetValue(newValue, arg2)
+		local zone, bossName = CommDKP:ResolveMenuBoss(newValue, arg2)
 		if not zone then return end
 		CommDKP:ApplyBossContext(zone, bossName)					-- calls RefreshBossContext below
 	end
@@ -339,23 +361,19 @@ function CommDKP:AdjustDKPTab_Create()
 		if curReason ~= L["BOSSKILLBONUS"] and curReason ~= L["NEWBOSSKILLBONUS"] then
 			CommDKP.ConfigTab2.reasonDropDown:SetValue(L["BOSSKILLBONUS"])
 		end
-		LibDD:UIDropDownMenu_SetText(self, core.CurrentRaidZone..": "..core.LastKilledBoss)
+		DD:UIDropDownMenu_SetText(self, core.CurrentRaidZone..": "..core.LastKilledBoss)
 		LibDD:CloseDropDownMenus()
 	end
 
 	-- Add DKP Edit Box
 
-	CommDKP.ConfigTab2.addDKP = CreateFrame("EditBox", nil, CommDKP.ConfigTab2, "BackdropTemplate")
-	
-	CommDKP.ConfigTab2.addDKP:SetPoint("TOPLEFT", CommDKP.ConfigTab2.reasonDropDown, "BOTTOMLEFT", 20, -44)     
+	CommDKP.ConfigTab2.addDKP = CreateFrame("EditBox", nil, mBody)
+
+	CommDKP.ConfigTab2.addDKP:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -92)
 	CommDKP.ConfigTab2.addDKP:SetAutoFocus(false)
 	CommDKP.ConfigTab2.addDKP:SetMultiLine(false)
-	CommDKP.ConfigTab2.addDKP:SetSize(100, 24)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.addDKP, "TableBorder", "InputBg", "InputBorder")
+	CommDKP.ConfigTab2.addDKP:SetSize(90, W.H)
 	CommDKP.ConfigTab2.addDKP:SetMaxLetters(10)
-	CommDKP.ConfigTab2.addDKP:SetTextColor(1, 1, 1, 1)
-	CommDKP.ConfigTab2.addDKP:SetFontObject("CommDKPNormalRight")
-	CommDKP.ConfigTab2.addDKP:SetTextInsets(10, 10, 5, 5)
 	CommDKP.ConfigTab2.addDKP:SetScript("OnEscapePressed", function(self)    -- clears text and focus on esc
 		self:SetText("")
 		self:ClearFocus()
@@ -370,38 +388,29 @@ function CommDKP:AdjustDKPTab_Create()
 	CommDKP.ConfigTab2.addDKP:SetScript("OnLeave", function(self)
 		GameTooltip:Hide()
 	end)
+	W.StyleEditBox(CommDKP.ConfigTab2.addDKP, { numeric = true })   -- B11: right-aligned only; -50 still allowed
 
-	CommDKP.ConfigTab2.pointsHeader = CommDKP.ConfigTab2:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.pointsHeader:SetFontObject("GameFontHighlightLeft");
-	CommDKP.ConfigTab2.pointsHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.addDKP, "TOPLEFT", 3, 3);
-	CommDKP.ConfigTab2.pointsHeader:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.pointsHeader:SetText(L["POINTS"]..":")
+	CommDKP.ConfigTab2.pointsHeader = W.CreateText(mBody, "label", L["POINTS"], "LEFT")
+	CommDKP.ConfigTab2.pointsHeader:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -78);
 
 	-- Raid Only Checkbox
-	CommDKP.ConfigTab2.RaidOnlyCheck = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2, "UICheckButtonTemplate");
+	CommDKP.ConfigTab2.RaidOnlyCheck = W.CreateCheckbox(mBody, nil, "Show Raid Only");
 	CommDKP.ConfigTab2.RaidOnlyCheck:SetChecked(false)
-	CommDKP.ConfigTab2.RaidOnlyCheck:SetScale(0.6);
-	CommDKP.ConfigTab2.RaidOnlyCheck.text:SetText("  |cff5151deShow Raid Only|r");
-	CommDKP.ConfigTab2.RaidOnlyCheck.text:SetScale(1.5);
-	CommDKP.ConfigTab2.RaidOnlyCheck.text:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.RaidOnlyCheck:SetPoint("LEFT", CommDKP.ConfigTab2.addDKP, "RIGHT", 15, 13);
+	CommDKP.ConfigTab2.RaidOnlyCheck:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -130);   -- hidden (AD-20.3.2)
 	CommDKP.ConfigTab2.RaidOnlyCheck:Hide()
 	
 
 	-- Select All Checkbox
-	CommDKP.ConfigTab2.selectAll = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2, "UICheckButtonTemplate");
+	CommDKP.ConfigTab2.selectAll = W.CreateCheckbox(mBody, nil, L["SELECTALLVISIBLE"]);
 	CommDKP.ConfigTab2.selectAll:SetChecked(false)
-	CommDKP.ConfigTab2.selectAll:SetScale(0.6);
-	CommDKP.ConfigTab2.selectAll.text:SetText("  |cff5151de"..L["SELECTALLVISIBLE"].."|r");
-	CommDKP.ConfigTab2.selectAll.text:SetScale(1.5);
-	CommDKP.ConfigTab2.selectAll.text:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.selectAll:SetPoint("LEFT", CommDKP.ConfigTab2.addDKP, "RIGHT", 15, -13);
+	CommDKP.ConfigTab2.selectAll:SetPoint("TOPLEFT", reasonHeader, "TOPLEFT", 0, -154);   -- hidden (AD-20.3.2)
 	CommDKP.ConfigTab2.selectAll:Hide();
 	
 
 		-- Adjust DKP Button
-	CommDKP.ConfigTab2.adjustButton = self:CreateButton("TOPLEFT", CommDKP.ConfigTab2.addDKP, "BOTTOMLEFT", -1, -15, L["ADJUSTDKP"]);
-	CommDKP.ConfigTab2.adjustButton:SetSize(90,25)
+	CommDKP.ConfigTab2.adjustButton = self:CreateButton("BOTTOMRIGHT", mBody, "BOTTOMRIGHT", -W.PAD, W.PAD, L["ADJUSTDKP"]);
+	CommDKP.ConfigTab2.adjustButton:SetSize(110, W.H)
+	W.StyleButton(CommDKP.ConfigTab2.adjustButton, "primary")
 	CommDKP.ConfigTab2.adjustButton:SetScript("OnClick", function()
 		if #core.SelectedData > 0 and curReason and CommDKP.ConfigTab2.otherReason:GetText() then
 			local selected = L["AREYOUSURE"].." "..CommDKP_round(CommDKP.ConfigTab2.addDKP:GetNumber(), core.DB.modes.rounding).." "..L["DKPTOFOLLOWING"]..": \n\n";
@@ -450,17 +459,13 @@ function CommDKP:AdjustDKPTab_Create()
 
 	-- weekly decay Editbox
 
-	CommDKP.ConfigTab2.decayDKP = CreateFrame("EditBox", nil, CommDKP.ConfigTab2, "BackdropTemplate")
-	
-	CommDKP.ConfigTab2.decayDKP:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2, "BOTTOMLEFT", 21, 70)     
+	CommDKP.ConfigTab2.decayDKP = CreateFrame("EditBox", nil, dBody)
+
+	CommDKP.ConfigTab2.decayDKP:SetPoint("TOPLEFT", dBody, "TOPLEFT", W.PAD, -24)
 	CommDKP.ConfigTab2.decayDKP:SetAutoFocus(false)
 	CommDKP.ConfigTab2.decayDKP:SetMultiLine(false)
-	CommDKP.ConfigTab2.decayDKP:SetSize(100, 24)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.decayDKP, "TableBorder", "InputBg", "InputBorder")
+	CommDKP.ConfigTab2.decayDKP:SetSize(60, W.H)
 	CommDKP.ConfigTab2.decayDKP:SetMaxLetters(4)
-	CommDKP.ConfigTab2.decayDKP:SetTextColor(1, 1, 1, 1)
-	CommDKP.ConfigTab2.decayDKP:SetFontObject("CommDKPNormalRight")
-	CommDKP.ConfigTab2.decayDKP:SetTextInsets(10, 15, 5, 5)
 	CommDKP.ConfigTab2.decayDKP:SetNumber(tonumber(core.DB.DKPBonus.DecayPercentage))
 	CommDKP.ConfigTab2.decayDKP:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
 		self:ClearFocus()
@@ -476,26 +481,18 @@ function CommDKP:AdjustDKPTab_Create()
 	CommDKP.ConfigTab2.decayDKP:SetScript("OnLeave", function(self)
 		GameTooltip:Hide()
 	end)
+	W.StyleEditBox(CommDKP.ConfigTab2.decayDKP, { numeric = true })
 
-	CommDKP.ConfigTab2.decayDKPHeader = CommDKP.ConfigTab2:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.decayDKPHeader:SetFontObject("GameFontHighlightLeft");
-	CommDKP.ConfigTab2.decayDKPHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.decayDKP, "TOPLEFT", 3, 3);
-	CommDKP.ConfigTab2.decayDKPHeader:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.decayDKPHeader:SetText(L["WEEKLYDKPDECAY"]..":")
+	CommDKP.ConfigTab2.decayDKPHeader = W.CreateText(dBody, "label", L["WEEKLYDKPDECAY"], "LEFT")
+	CommDKP.ConfigTab2.decayDKPHeader:SetPoint("TOPLEFT", dBody, "TOPLEFT", W.PAD, -8);
 
-	CommDKP.ConfigTab2.decayDKPFooter = CommDKP.ConfigTab2.decayDKP:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab2.decayDKPFooter:SetFontObject("CommDKPNormalLeft");
-	CommDKP.ConfigTab2.decayDKPFooter:SetPoint("LEFT", CommDKP.ConfigTab2.decayDKP, "RIGHT", -15, 0);
-	CommDKP.ConfigTab2.decayDKPFooter:SetText("%")
+	CommDKP.ConfigTab2.decayDKPFooter = W.CreateText(dBody, "body", "%", "LEFT", "textMuted")
+	CommDKP.ConfigTab2.decayDKPFooter:SetPoint("LEFT", CommDKP.ConfigTab2.decayDKP, "RIGHT", 4, 0);
 
 	-- selected players only checkbox
-	CommDKP.ConfigTab2.SelectedOnlyCheck = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2, "UICheckButtonTemplate");
+	CommDKP.ConfigTab2.SelectedOnlyCheck = W.CreateCheckbox(dBody, nil, L["SELPLAYERSONLY"]);
 	CommDKP.ConfigTab2.SelectedOnlyCheck:SetChecked(false)
-	CommDKP.ConfigTab2.SelectedOnlyCheck:SetScale(0.6);
-	CommDKP.ConfigTab2.SelectedOnlyCheck.text:SetText("  |cff5151de"..L["SELPLAYERSONLY"].."|r");
-	CommDKP.ConfigTab2.SelectedOnlyCheck.text:SetScale(1.5);
-	CommDKP.ConfigTab2.SelectedOnlyCheck.text:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.SelectedOnlyCheck:SetPoint("TOP", CommDKP.ConfigTab2.decayDKP, "BOTTOMLEFT", 15, -13);
+	CommDKP.ConfigTab2.SelectedOnlyCheck:SetPoint("TOPLEFT", dBody, "TOPLEFT", W.PAD, -58);
 	CommDKP.ConfigTab2.SelectedOnlyCheck:SetScript("OnClick", function(self)
 		PlaySound(808)
 	end)
@@ -511,13 +508,9 @@ function CommDKP:AdjustDKPTab_Create()
 	end)
 
 	-- add to negative dkp checkbox
-	CommDKP.ConfigTab2.AddNegative = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2, "UICheckButtonTemplate");
+	CommDKP.ConfigTab2.AddNegative = W.CreateCheckbox(dBody, nil, L["ADDNEGVALUES"]);
 	CommDKP.ConfigTab2.AddNegative:SetChecked(core.DB.modes.AddToNegative)
-	CommDKP.ConfigTab2.AddNegative:SetScale(0.6);
-	CommDKP.ConfigTab2.AddNegative.text:SetText("  |cff5151de"..L["ADDNEGVALUES"].."|r");
-	CommDKP.ConfigTab2.AddNegative.text:SetScale(1.5);
-	CommDKP.ConfigTab2.AddNegative.text:SetFontObject("CommDKPSmallLeft")
-	CommDKP.ConfigTab2.AddNegative:SetPoint("TOP", CommDKP.ConfigTab2.SelectedOnlyCheck, "BOTTOM", 0, 0);
+	CommDKP.ConfigTab2.AddNegative:SetPoint("TOPLEFT", dBody, "TOPLEFT", W.PAD, -82);
 	CommDKP.ConfigTab2.AddNegative:SetScript("OnClick", function(self)
 		core.DB.modes.AddToNegative = self:GetChecked();
 		PlaySound(808)
@@ -533,8 +526,9 @@ function CommDKP:AdjustDKPTab_Create()
 		GameTooltip:Hide()
 	end)
 
-	CommDKP.ConfigTab2.decayButton = self:CreateButton("TOPLEFT", CommDKP.ConfigTab2.decayDKP, "TOPRIGHT", 20, 0, L["APPLYDECAY"]);
-	CommDKP.ConfigTab2.decayButton:SetSize(90,25)
+	CommDKP.ConfigTab2.decayButton = self:CreateButton("BOTTOMRIGHT", dBody, "BOTTOMRIGHT", -W.PAD, W.PAD, L["APPLYDECAY"]);
+	CommDKP.ConfigTab2.decayButton:SetSize(110, W.H)
+	W.StyleButton(CommDKP.ConfigTab2.decayButton, "primary")
 	CommDKP.ConfigTab2.decayButton:SetScript("OnClick", function()
 		local SelectedToggle;
 		local selected;
@@ -569,21 +563,19 @@ function CommDKP:AdjustDKPTab_Create()
 
 	-- Raid Timer Container
 
-	CommDKP.ConfigTab2.RaidTimerContainer = CreateFrame("Frame", nil, CommDKP.ConfigTab2, "BackdropTemplate");
-	
-	CommDKP.ConfigTab2.RaidTimerContainer:SetSize(200, 360);
-	CommDKP.ConfigTab2.RaidTimerContainer:SetPoint("RIGHT", CommDKP.ConfigTab2, "RIGHT", -25, -60)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.RaidTimerContainer, "TableBorder", "InputBg", "InputBorderAccent")-- Pop out button
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut = CreateFrame("Button", nil, CommDKP.ConfigTab2, "UIMenuButtonStretchTemplate")
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetPoint("TOPRIGHT", CommDKP.ConfigTab2.RaidTimerContainer, "TOPRIGHT", -5, -5)
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetHeight(22)
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetWidth(18)
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetNormalFontObject("CommDKPLargeCenter")
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetHighlightFontObject("CommDKPLargeCenter")
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:GetFontString():SetTextColor(0, 0.3, 0.7, 1)
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetScale(1.2)
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetFrameStrata("DIALOG")
-		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetFrameLevel(15)
+	-- AD-19.2 (012c) (g) / UX §13.7 (b): 256 wide at (278, 0) -> right edge 534, 4 px clear of the pane rail lane.
+	local RT_W = 256
+	local RT_INNER = RT_W - 6 - 2 * W.PAD     -- usable body width of the Raid Timer card (226)
+	CommDKP.ConfigTab2.RaidTimerContainer = W.CreateCard(CommDKP.ConfigTab2, L["RAIDTIMER"], RT_W, 482);
+	CommDKP.ConfigTab2.RaidTimerContainer:SetPoint("TOPLEFT", CommDKP.ConfigTab2, "TOPLEFT", 278, 0)
+	local rBody = CommDKP.ConfigTab2.RaidTimerContainer.Body
+	local HALF = math.floor((RT_INNER - 6) / 2)  -- two side-by-side controls (110)
+		-- Pop out button: a 20 x 20 [>] / [<] icon button in the card header's right slot (its ">"/"<" text is logic state)
+		CommDKP.ConfigTab2.RaidTimerContainer.PopOut = W.CreateButton(CommDKP.ConfigTab2.RaidTimerContainer, ">", nil, { width = 20 })
+		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetSize(20, 20)
+		CommDKP.ConfigTab2.RaidTimerContainer:AddHeaderButton(CommDKP.ConfigTab2.RaidTimerContainer.PopOut)
+		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:ClearAllPoints()
+		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetPoint("RIGHT", CommDKP.ConfigTab2.RaidTimerContainer.Header.Actions, "RIGHT", -2, 0)
 		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetText(">")
 		CommDKP.ConfigTab2.RaidTimerContainer.PopOut:SetScript("OnEnter", function(self)
 			GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
@@ -600,46 +592,43 @@ function CommDKP:AdjustDKPTab_Create()
 				RaidTimerPopout_Create()
 			else
 				self:SetText(">");
-				CommDKP.RaidTimerPopout:Hide();
+			CommDKP.RaidTimerPopout:Hide();
 			end
 		end)
+		W.StyleButton(CommDKP.ConfigTab2.RaidTimerContainer.PopOut)
 
 		-- Raid Timer Header
-	    CommDKP.ConfigTab2.RaidTimerContainer.Header = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.Header:SetFontObject("CommDKPLargeLeft");
-	    CommDKP.ConfigTab2.RaidTimerContainer.Header:SetScale(0.6)
-	    CommDKP.ConfigTab2.RaidTimerContainer.Header:SetPoint("TOPLEFT", CommDKP.ConfigTab2.RaidTimerContainer, "TOPLEFT", 15, -15);
-	    CommDKP.ConfigTab2.RaidTimerContainer.Header:SetText(L["RAIDTIMER"])
+	    -- (the old "RAID TIMER" large text is now the card title; .Header is the card's header band)
+	    -- Readout well (bg0 + 1 px line): Time Elapsed on the left, Bonus Awarded on the right.
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout = CreateFrame("Frame", nil, rBody)
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout:SetPoint("TOPLEFT", rBody, "TOPLEFT", W.PAD, -10)
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout:SetSize(RT_INNER, 58)
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout.Fill = CommDKP.ConfigTab2.RaidTimerContainer.Readout:CreateTexture(nil, "BACKGROUND")
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout.Fill:SetAllPoints()
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout.Fill:SetColorTexture(unpack((core.Palette or core.Palettes.Forever).bg0))
+	    CommDKP.ConfigTab2.RaidTimerContainer.Readout.Edges = CommDKP:CreatePixelBorder(CommDKP.ConfigTab2.RaidTimerContainer.Readout, (core.Palette or core.Palettes.Forever).line)
+	    local well = CommDKP.ConfigTab2.RaidTimerContainer.Readout
 
 	    -- Raid Timer Output Header
-	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader:SetFontObject("CommDKPNormalRight");
-	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader:SetPoint("TOP", CommDKP.ConfigTab2.RaidTimerContainer, "TOP", -20, -40);
-	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader:SetText(L["TIMEELAPSED"]..":")
-	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader:Hide();
+	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader = W.CreateText(well, "label", L["TIMEELAPSED"], "LEFT")
+	    CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader:SetPoint("TOPLEFT", well, "TOPLEFT", 8, -7);   -- §12.3.3: now shown
 
 	    -- Raid Timer Output
-	    CommDKP.ConfigTab2.RaidTimerContainer.Output = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.Output:SetFontObject("CommDKPLargeLeft");
-	    CommDKP.ConfigTab2.RaidTimerContainer.Output:SetScale(0.8)
-	    CommDKP.ConfigTab2.RaidTimerContainer.Output:SetPoint("LEFT", CommDKP.ConfigTab2.RaidTimerContainer.OutputHeader, "RIGHT", 5, 0);
+	    CommDKP.ConfigTab2.RaidTimerContainer.Output = W.CreateText(well, "readout", "|cff00ff0000:00:00|r", "LEFT")   -- AD-19 R1: green idle clock (popout parity)
+	    CommDKP.ConfigTab2.RaidTimerContainer.Output:SetPoint("BOTTOMLEFT", well, "BOTTOMLEFT", 8, 7);
 
 	    -- Bonus Awarded Header
-	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader:SetFontObject("CommDKPNormalRight");
-	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader:SetPoint("TOP", CommDKP.ConfigTab2.RaidTimerContainer, "TOP", -15, -60);
-	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader:SetText(L["BONUSAWARDED"]..":")
-	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader:Hide();
+	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader = W.CreateText(well, "label", L["BONUSAWARDED"], "RIGHT")
+	    CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader:SetPoint("TOPRIGHT", well, "TOPRIGHT", -8, -7);   -- §12.3.3: now shown
 
 	    -- Bonus Awarded Output
-	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus:SetFontObject("CommDKPLargeLeft");
-	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus:SetScale(0.8)
-	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus:SetPoint("LEFT", CommDKP.ConfigTab2.RaidTimerContainer.BonusHeader, "RIGHT", 5, 0);
+	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus = W.CreateText(well, "readout", "|cff00ff000|r", "RIGHT")   -- AD-19 R1: green idle bonus
+	    CommDKP.ConfigTab2.RaidTimerContainer.Bonus:SetPoint("BOTTOMRIGHT", well, "BOTTOMRIGHT", -8, 7);
 
 	    -- Start Raid Timer Button
-	    CommDKP.ConfigTab2.RaidTimerContainer.StartTimer = self:CreateButton("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer, "BOTTOMLEFT", 10, 135, L["INITRAID"]);
-		CommDKP.ConfigTab2.RaidTimerContainer.StartTimer:SetSize(90,25)
+	    CommDKP.ConfigTab2.RaidTimerContainer.StartTimer = self:CreateButton("TOPLEFT", rBody, "TOPLEFT", W.PAD, -214, L["INITRAID"]);
+		CommDKP.ConfigTab2.RaidTimerContainer.StartTimer:SetSize(HALF, W.H)
+		W.StyleButton(CommDKP.ConfigTab2.RaidTimerContainer.StartTimer, "primary")
 		CommDKP.ConfigTab2.RaidTimerContainer.StartTimer:SetScript("OnClick", function(self)
 			if not IsInRaid() then
 				StaticPopupDialogs["NO_RAID_TIMER"] = {
@@ -670,7 +659,7 @@ function CommDKP:AdjustDKPTab_Create()
 								CommDKP.Sync:SendData("CommDKPBCastMsg", L["RAIDRESUME"])
 							else
 								CommDKP.Sync:SendData("CommDKPBCastMsg", L["RAIDSTART"])
-								CommDKP.ConfigTab2.RaidTimerContainer.Output:SetText("|cff00ff0000|r")
+								CommDKP.ConfigTab2.RaidTimerContainer.Output:SetText("|cff00ff0000:00:00|r")   -- AD-19.2 (g): well-formed fresh-start seed
 							end
 							CommDKP:StartRaidTimer(false)
 						end,
@@ -691,7 +680,7 @@ function CommDKP:AdjustDKPTab_Create()
 						CommDKP.Sync:SendData("CommDKPBCastMsg", L["RAIDRESUME"])
 					else
 						CommDKP.Sync:SendData("CommDKPBCastMsg", L["RAIDSTART"])
-						CommDKP.ConfigTab2.RaidTimerContainer.Output:SetText("|cff00ff0000|r")
+						CommDKP.ConfigTab2.RaidTimerContainer.Output:SetText("|cff00ff0000:00:00|r")   -- AD-19.2 (g): well-formed fresh-start seed
 					end
 					CommDKP:StartRaidTimer(false)
 				end
@@ -725,8 +714,8 @@ function CommDKP:AdjustDKPTab_Create()
 		end)
 
 		-- Pause Raid Timer Button
-	    CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer = self:CreateButton("BOTTOMRIGHT", CommDKP.ConfigTab2.RaidTimerContainer, "BOTTOMRIGHT", -10, 135, L["PAUSERAID"]);
-		CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer:SetSize(90,25)
+	    CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer = self:CreateButton("TOPLEFT", rBody, "TOPLEFT", W.PAD + HALF + 6, -214, L["PAUSERAID"]);
+		CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer:SetSize(HALF, W.H)
 		CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer:Hide();
 		CommDKP.ConfigTab2.RaidTimerContainer.PauseTimer:SetScript("OnClick", function(self)
 			if core.RaidInProgress then
@@ -755,17 +744,13 @@ function CommDKP:AdjustDKPTab_Create()
 		-- Award Interval Editbox
 		if not core.DB.modes.increment then core.DB.modes.increment = 60 end
 
-		CommDKP.ConfigTab2.RaidTimerContainer.interval = CreateFrame("EditBox", nil, CommDKP.ConfigTab2.RaidTimerContainer, "BackdropTemplate")
-		
-		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer, "BOTTOMLEFT", 35, 225)     
+		CommDKP.ConfigTab2.RaidTimerContainer.interval = CreateFrame("EditBox", nil, rBody)
+
+		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetPoint("TOPLEFT", rBody, "TOPLEFT", W.PAD, -96)
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetAutoFocus(false)
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetMultiLine(false)
-		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetSize(60, 24)
-		CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.RaidTimerContainer.interval, "TableBorder", "InputBg", "InputBorder")
+		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetSize(HALF, W.H)
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetMaxLetters(5)
-		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetTextColor(1, 1, 1, 1)
-		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetFontObject("CommDKPSmallRight")
-		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetTextInsets(10, 15, 5, 5)
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetNumber(tonumber(core.DB.modes.increment))
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetScript("OnTextChanged", function(self)    -- clears focus on esc
 			if tonumber(self:GetNumber()) then
@@ -806,26 +791,21 @@ function CommDKP:AdjustDKPTab_Create()
 		CommDKP.ConfigTab2.RaidTimerContainer.interval:SetScript("OnLeave", function(self)
 			GameTooltip:Hide()
 		end)
+		W.StyleEditBox(CommDKP.ConfigTab2.RaidTimerContainer.interval, { numeric = true })
 
-		CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader:SetFontObject("CommDKPTinyRight");
-	    CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer.interval, "TOPLEFT", 0, 2);
-	    CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader:SetText(L["INTERVAL"]..":")
+		CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader = W.CreateText(rBody, "label", L["INTERVAL"], "LEFT")
+	    CommDKP.ConfigTab2.RaidTimerContainer.intervalHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer.interval, "TOPLEFT", 0, 4);
 
 	    -- Award Value Editbox
 	    if not core.DB.DKPBonus.IntervalBonus then core.DB.DKPBonus.IntervalBonus = 15 end
 
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue = CreateFrame("EditBox", nil, CommDKP.ConfigTab2.RaidTimerContainer, "BackdropTemplate")
-	
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetPoint("LEFT", CommDKP.ConfigTab2.RaidTimerContainer.interval, "RIGHT", 10, 0)     
+		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue = CreateFrame("EditBox", nil, rBody)
+
+		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetPoint("LEFT", CommDKP.ConfigTab2.RaidTimerContainer.interval, "RIGHT", 6, 0)
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetAutoFocus(false)
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetMultiLine(false)
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetSize(60, 24)
-		CommDKP:ApplyBackdrop(CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue, "TableBorder", "InputBg", "InputBorder")
+		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetSize(HALF, W.H)
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetMaxLetters(5)
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetTextColor(1, 1, 1, 1)
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetFontObject("CommDKPSmallRight")
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetTextInsets(10, 15, 5, 5)
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetNumber(tonumber(core.DB.DKPBonus.IntervalBonus))
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetScript("OnTextChanged", function(self)    -- clears focus on esc
 			if tonumber(self:GetNumber()) then
@@ -865,20 +845,16 @@ function CommDKP:AdjustDKPTab_Create()
 		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue:SetScript("OnLeave", function(self)
 			GameTooltip:Hide()
 		end)
+		W.StyleEditBox(CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue, { numeric = true })
 
-		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader:SetFontObject("CommDKPTinyRight");
-	    CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue, "TOPLEFT", 0, 2);
-	    CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader:SetText(L["BONUS"]..":")
+		CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader = W.CreateText(rBody, "label", L["BONUS"], "LEFT")
+	    CommDKP.ConfigTab2.RaidTimerContainer.bonusvalueHeader:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer.bonusvalue, "TOPLEFT", 0, 4);
     	
     	-- Give On Time Bonus Checkbox
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2.RaidTimerContainer, "UICheckButtonTemplate");
+		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus = W.CreateCheckbox(rBody, nil, L["GIVEONTIMEBONUS"]);
 		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus:SetChecked(core.DB.DKPBonus.GiveRaidStart)
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus:SetScale(0.6);
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus.text:SetText("  |cff5151de"..L["GIVEONTIMEBONUS"].."|r");
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus.text:SetScale(1.5);
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus.text:SetFontObject("CommDKPSmallLeft")
-		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus:SetPoint("TOPLEFT", CommDKP.ConfigTab2.RaidTimerContainer.interval, "BOTTOMLEFT", 0, -10);
+		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus:SetPoint("TOPLEFT", rBody, "TOPLEFT", W.PAD, -130);
+
 		CommDKP.ConfigTab2.RaidTimerContainer.StartBonus:SetScript("OnClick", function(self)
 			if self:GetChecked() then
 				core.DB.DKPBonus.GiveRaidStart = true;
@@ -898,13 +874,10 @@ function CommDKP:AdjustDKPTab_Create()
 		end)
 
 		-- Give Raid End Bonus Checkbox
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2.RaidTimerContainer, "UICheckButtonTemplate");
+		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus = W.CreateCheckbox(rBody, nil, L["GIVEENDBONUS"]);
 		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus:SetChecked(core.DB.DKPBonus.GiveRaidEnd)
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus:SetScale(0.6);
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus.text:SetText("  |cff5151de"..L["GIVEENDBONUS"].."|r");
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus.text:SetScale(1.5);
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus.text:SetFontObject("CommDKPSmallLeft")
-		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus:SetPoint("TOP", CommDKP.ConfigTab2.RaidTimerContainer.StartBonus, "BOTTOM", 0, 2);
+		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus:SetPoint("TOPLEFT", rBody, "TOPLEFT", W.PAD, -154);
+
 		CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus:SetScript("OnClick", function(self)
 			if self:GetChecked() then
 				core.DB.DKPBonus.GiveRaidEnd = true;
@@ -924,13 +897,10 @@ function CommDKP:AdjustDKPTab_Create()
 		end)
 
 		-- Include Standby Checkbox
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude = CreateFrame("CheckButton", nil, CommDKP.ConfigTab2.RaidTimerContainer, "UICheckButtonTemplate");
+		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude = W.CreateCheckbox(rBody, nil, L["INCLUDESTANDBY"]);
 		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude:SetChecked(core.DB.DKPBonus.IncStandby)
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude:SetScale(0.6);
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude.text:SetText("  |cff5151de"..L["INCLUDESTANDBY"].."|r");
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude.text:SetScale(1.5);
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude.text:SetFontObject("CommDKPSmallLeft")
-		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude:SetPoint("TOP", CommDKP.ConfigTab2.RaidTimerContainer.EndRaidBonus, "BOTTOM", 0, 2);
+		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude:SetPoint("TOPLEFT", rBody, "TOPLEFT", W.PAD, -178);
+
 		CommDKP.ConfigTab2.RaidTimerContainer.StandbyInclude:SetScript("OnClick", function(self)
 			if self:GetChecked() then
 				core.DB.DKPBonus.IncStandby = true;
@@ -950,10 +920,28 @@ function CommDKP:AdjustDKPTab_Create()
 			GameTooltip:Hide()
 		end)
 
-		CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning = CommDKP.ConfigTab2.RaidTimerContainer:CreateFontString(nil, "OVERLAY")
-	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetFontObject("CommDKPTinyLeft");
-	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetWidth(180)
-	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab2.RaidTimerContainer, "BOTTOMLEFT", 10, 10);
-	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetText("|CFFFF0000"..L["TIMERWARNING"].."|r")
+		-- §12.2.12 warning note (replaces the red paragraph; full TIMERWARNING text, locale string untouched)
+		CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning = W.CreateWarnNote(rBody, L["TIMERWARNING"])
+	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetPoint("BOTTOMLEFT", rBody, "BOTTOMLEFT", W.PAD, W.PAD);
+	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetPoint("BOTTOMRIGHT", rBody, "BOTTOMRIGHT", -W.PAD, W.PAD);
+	    CommDKP.ConfigTab2.RaidTimerContainer.TimerWarning:SetHeight(170)       -- refit once the text has a width (OnShow)
+	    CommDKP.ConfigTab2.RaidTimerContainer:HookScript("OnShow", function(self) self.TimerWarning:Fit() end)
 	    RaidTimerPopout_Create()
+
+	-- AD-20.3.2 (BR-13.3.4/13.3.5): size the Manual Adjustment card from the caption's rendered height so the
+	-- Points box always clears the Adjust DKP button by >= 8 px; a taller card pushes Weekly DKP Decay down.
+	local MANUAL_MIN_H, DECAY_H, PANE_H = 306, 168, 482
+	local function LayoutManualCard()
+		local d = CommDKP.ConfigTab2.description
+		local hc = d and d.GetStringHeight and d:GetStringHeight() or 0
+		if not hc or hc < 1 then hc = 96 end                 -- fonts not laid out yet: assume 8 caption lines
+		local cardH = math.max(MANUAL_MIN_H, math.ceil(hc) + 204)   -- 28 chrome + 10 + hc + 10 + 114 + 8 clearance + 34 button
+		manualCard:SetHeight(cardH)
+		decayCard:ClearAllPoints()
+		decayCard:SetPoint("TOPLEFT", CommDKP.ConfigTab2, "TOPLEFT", 0, -(cardH + W.GUT))
+		CommDKP.ConfigTab2:SetHeight(math.max(PANE_H, cardH + W.GUT + DECAY_H))
+	end
+	CommDKP.ConfigTab2.LayoutManualCard = LayoutManualCard
+	LayoutManualCard()
+	CommDKP.ConfigTab2:HookScript("OnShow", LayoutManualCard)
 end

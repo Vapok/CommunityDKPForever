@@ -3,8 +3,7 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
 
--- AD-9.7: Forever change log title and text (empty CHANGELOGn keys are skipped, no blank gaps).
-CommDKP.ChangeLogTitle = "CommunityDKP Forever Change Log"
+-- AD-9.7: Forever change log text (empty CHANGELOGn keys are skipped, no blank gaps). AD-33: the window title lives in CreateChangeLog.
 function CommDKP:BuildChangeLogText()
 	local parts = {}
 	for i=1,10 do local s=L["CHANGELOG"..i]; if s and s~="" then parts[#parts+1]=s end end
@@ -13,11 +12,12 @@ end
 
 local OptionsLoaded = false;
 local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: roster selectors (SortButtons.class.t, TeamViewChangerDropDown)
+local W = CommDKP.Widgets
 
 
 function CommDKP_RestoreFilterOptions()  		-- restores default filter selections
-	CommDKP.UIConfig.search:SetText(L["SEARCH"])
-	CommDKP.UIConfig.search:SetTextColor(0.3, 0.3, 0.3, 1)
+	CommDKP.UIConfig.search:SetText("")              -- §12.3.1: the "Search" hint is a placeholder, never the value
 	CommDKP.UIConfig.search:ClearFocus()
 	core.WorkingTable = CopyTable(CommDKP:GetTable(CommDKP_DKPTable, true))
 	core.CurView = "all"
@@ -32,7 +32,7 @@ function CommDKP_RestoreFilterOptions()  		-- restores default filter selections
 end
 
 -- Focus z-order between UIConfig (DIALOG) and the Change Log window. Distinct strata, not frame levels:
--- BasicFrameTemplateWithInset's CloseButton sits at a very high frame level, so within the same strata it
+-- The template window's CloseButton sits at a very high frame level, so within the same strata it
 -- bleeds through UIConfig. A lower strata (MEDIUM) always renders below every child of a higher one.
 -- UX §10.1.3 (supersedes §9.1.4): registry of template "floaters". One focused floater (or one focused
 -- group) sits in FULLSCREEN, every other floater in MEDIUM.
@@ -124,19 +124,9 @@ function CommDKP:Toggle()        -- toggles IsShown() state of CommDKP.UIConfig,
 	CommDKP.UIConfig:SetClampedToScreen(true)
 	if core.BiddingWindow then core.BiddingWindow:SetFrameLevel(6) end
 	if core.ModesWindow then core.ModesWindow:SetFrameLevel(2) end
-		
-	if core.IsOfficer == nil then
-		CommDKP:CheckOfficer()
-	end
-	--core.IsOfficer = C_GuildInfo.CanEditOfficerNote()  -- seemingly removed from classic API
-	if core.IsOfficer == false then
-		_G["CommDKPCommDKP.ConfigTabMenuTab2"]:Hide(); --Adjust DKP
-		_G["CommDKPCommDKP.ConfigTabMenuTab3"]:Hide(); -- Manage
-		--_G["CommDKPCommDKP.ConfigTabMenuTab7"]:Hide(); -- Loot Prices
-		_G["CommDKPCommDKP.ConfigTabMenuTab4"]:SetPoint("TOPLEFT", _G["CommDKPCommDKP.ConfigTabMenuTab1"], "TOPRIGHT", -14, 0)
-		_G["CommDKPCommDKP.ConfigTabMenuTab5"]:SetPoint("TOPLEFT", _G["CommDKPCommDKP.ConfigTabMenuTab4"], "TOPRIGHT", -14, 0)
-		_G["CommDKPCommDKP.ConfigTabMenuTab6"]:SetPoint("TOPLEFT", _G["CommDKPCommDKP.ConfigTabMenuTab5"], "TOPRIGHT", -14, 0)
-	end
+
+	CommDKP:UpdateGuildUIState()   -- AD-20.2.2 (CDKP-013a): resolve IsOfficer, tabs 2/3 shown iff officer, Roster notice
+	if core.CommDKPUI:IsShown() then CommDKP:QueueTalentSend("toggle") end   -- AD-26.5.1 (d) / BR-18.4(d)
 
 	if not OptionsLoaded then
 		core.CommDKPOptions = core.CommDKPOptions or CommDKP:Options()
@@ -198,10 +188,33 @@ function CommDKP:FilterDKPTable(sort, reset)          -- filters core.WorkingTab
 	end
 
 	core.WorkingTable = {}
+
+	-- AD-28.2.2 (CDKP-020): group / online membership built ONCE per pass with the AD-15.1 helpers.
+	-- [11] In Party/Raid and [13] Not In Raid are exclusive ([11] wins if both are ever set); [12] Online ANDs with either.
+	local cb = CommDKP.ConfigTab1.checkBtn
+	local wantGroup    = cb[11]:GetChecked() and true or false
+	local wantNotGroup = (not wantGroup) and cb[13]:GetChecked() and true or false
+	local wantOnline   = cb[12]:GetChecked() and true or false
+	local isSecret     = _G.issecretvalue
+
+	local groupSet                                   -- normalized name -> true (raid or 5-man party; self via IsSelf, F1)
+	if wantGroup or wantNotGroup then
+		groupSet = CommDKP:GetGroupRosterNames()
+	end
+
+	local onlineSet                                  -- normalized name -> true for online guild members (D-28.4)
+	if wantOnline then
+		onlineSet = {}
+		for i = 1, (GetNumGuildMembers() or 0) do
+			local gName, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
+			if gName and not (isSecret and isSecret(gName)) and not (isSecret and isSecret(online)) and online then
+				local n = CommDKP:NormalizeName(gName)
+				if n and n ~= "" then onlineSet[n] = true end
+			end
+		end
+	end
+
 	for k,v in ipairs(parentTable) do
-		local IsOnline = false;
-		local name;
-		local InRaid = false;
 		local searchFilter = true
 
 		if CommDKP.UIConfig.search:GetText() ~= L["SEARCH"] and CommDKP.UIConfig.search:GetText() ~= "" then
@@ -211,45 +224,19 @@ function CommDKP:FilterDKPTable(sort, reset)          -- filters core.WorkingTab
 				searchFilter = false;
 			end
 		end
-		
-		if CommDKP.ConfigTab1.checkBtn[12]:GetChecked() then
-			local guildSize,_,_ = GetNumGuildMembers();
-			for i=1, guildSize do
-				local name,_,_,_,_,_,_,_,online = GetGuildRosterInfo(i)
-				name = CommDKP:StripRealm(name)  -- AD-9.6: realm suffix optional; nil entries skipped
 
-				if name and name == v.player then
-					IsOnline = online;
-					break;
-				end
+		if core.classFiltered[v.class] == true and searchFilter == true then
+			local n = CommDKP:NormalizeName(v.player) or ""
+			local groupOK = true
+			if groupSet then
+				local inGroup = groupSet[n] == true or CommDKP:IsSelf(v.player)
+				groupOK = (wantGroup and inGroup) or (wantNotGroup and not inGroup)
+			end
+			local onlineOK = (not wantOnline) or onlineSet[n] == true
+			if groupOK and onlineOK then
+				tinsert(core.WorkingTable, v)          -- exactly one insert per row (BR-20.4)
 			end
 		end
-		if(core.classFiltered[parentTable[k]["class"]] == true) and searchFilter == true then
-			if CommDKP.ConfigTab1.checkBtn[11]:GetChecked() or CommDKP.ConfigTab1.checkBtn[13]:GetChecked() then
-				for i=1, 40 do
-					tempName,_,_,_,_,tempClass = GetRaidRosterInfo(i)
-					if tempName and tempName == v.player and CommDKP.ConfigTab1.checkBtn[11]:GetChecked() then
-						tinsert(core.WorkingTable, v)
-					elseif tempName and tempName == v.player and CommDKP.ConfigTab1.checkBtn[13]:GetChecked() then
-						InRaid = true;
-					end
-				end
-			else
-				if ((CommDKP.ConfigTab1.checkBtn[12]:GetChecked() and IsOnline) or not CommDKP.ConfigTab1.checkBtn[12]:GetChecked()) then
-					tinsert(core.WorkingTable, v)
-				end
-			end
-			if CommDKP.ConfigTab1.checkBtn[13]:GetChecked() and InRaid == false then
-				if CommDKP.ConfigTab1.checkBtn[12]:GetChecked() then
-					if IsOnline then
-						tinsert(core.WorkingTable, v)
-					end
-				else
-					tinsert(core.WorkingTable, v)
-				end
-			end
-		end
-		InRaid = false;
 	end
 
 	if #core.WorkingTable == 0 then  		-- removes all filter settings if the filter combination results in an empty table
@@ -333,19 +320,113 @@ function CommDKP:SortDKPTable(id, reset)        -- reorganizes core.WorkingTable
 	CommDKP:DKPTable_Update()
 end
 
+---------------------------------------
+-- UX §11.1.3: expand / collapse workspace model (core.ShowState == true -> expanded)
+-- Widths keep the legacy 550 / 1106 geometry: the roster's FauxScrollFrame bar ends at x ~543 and the pane
+-- scroll bar hangs ~22 px right of TabMenu (x 546 + 535), so the spec's 540 / 1080 would clip both bars.
+---------------------------------------
+local W_EXPANDED, W_COLLAPSED = 1106, 550
+CommDKP.UIConfigWidths = { expanded = W_EXPANDED, collapsed = W_COLLAPSED }
+
+local function PinTopLeft(f)
+	local l, t = f:GetLeft(), f:GetTop()          -- frame-scale coords; SetPoint offsets are frame-scale too
+	if not (l and t) then return end
+	f:ClearAllPoints()
+	f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", l, t)
+end
+
+-- Every expand/collapse goes through here (side-tabs, the « Collapse pill, ResetPosition).
+function CommDKP:SetWorkspaceShown(shown)
+	local f = CommDKP.UIConfig
+	if not f then return end
+	PinTopLeft(f)                                 -- grow/shrink rightward: medallion and roster never jump
+	core.ShowState = shown and true or false
+	f:SetWidth(core.ShowState and W_EXPANDED or W_COLLAPSED)
+	if f.TabMenu then f.TabMenu:SetShown(core.ShowState) end
+	for i, tab in ipairs(f.SideTabs or {}) do tab:cdkpSetSelected(core.ShowState and i == f.activeTab) end
+end
+
+-- Pane switch only (no width change): ConfigMenuTabs' shared pane logic on the main TabMenu.
+function CommDKP:ShowConfigPane(i)
+	local f = CommDKP.UIConfig
+	if f and f.TabMenu then CommDKP:ShowTabPane(f.TabMenu, i) end
+end
+
+-- AD-19.2 (012d) (c) / BR-12.4: a click on the already-active tab while expanded is a silent no-op (returns false so
+-- SetTabs' click closure plays no sound). Collapsed + click expands on that tab. force = true is unchanged (OnShow,
+-- Settings launcher). Collapsing is only done by the « Collapse pill.
+function CommDKP:SelectSideTab(i, force)
+	local f = CommDKP.UIConfig
+	if not f then return false end
+	if not force and core.ShowState and f.activeTab == i then return false end   -- BR-12.4.1: silent no-op
+	f.activeTab = i
+	CommDKP:ShowConfigPane(i)
+	local tab = f.SideTabs and f.SideTabs[i]
+	if f.TabMenu and f.TabMenu.HeaderText and tab then f.TabMenu.HeaderText:SetText(tab.cdkpTitle) end
+	CommDKP:SetWorkspaceShown(true)
+	return true
+end
+
+-- AD-20.2.2 (CDKP-013a): single owner of the guild-dependent main-window state. Non-protected frames only (combat-safe).
+local NOTINGUILD_TEXT = "Not in a guild - guild DKP and officer features are disabled."
+function CommDKP:UpdateGuildUIState(force)
+	CommDKP:CheckOfficer(force)
+	local inGuild, officer = IsInGuild() and true or false, core.IsOfficer == true
+	core.LastInGuild = inGuild
+	local f = CommDKP.UIConfig
+	if not f or not f.SideTabs then return end             -- UI not built yet; CreateMenu calls us at the end
+	-- 1) officer tabs: shown ONLY when resolved true (nil -> hidden; fixes the tri-state leak)
+	local t2, t3 = _G["CommDKPCommDKP.ConfigTabMenuTab2"], _G["CommDKPCommDKP.ConfigTabMenuTab3"]
+	if t2 then t2:SetShown(officer) end
+	if t3 then t3:SetShown(officer) end
+	CommDKP:StackSideTabs(f, f.SideTabs, -42)              -- UX §11.1.4: close/open the gap both ways
+	-- 2) active tab became hidden -> Filters, without changing expanded/collapsed state
+	if not officer and (f.activeTab == 2 or f.activeTab == 3) then
+		local wasExpanded = core.ShowState
+		CommDKP:SelectSideTab(1, true)
+		if not wasExpanded then CommDKP:SetWorkspaceShown(false) end
+	end
+	-- 3) Roster header notice (BR-13.2.1-13.2.3); NOTINGUILDNOTICE, never NOTINGUILD (bucket sentinel, AD-20.1.3 #5)
+	if f.RosterCard then
+		local show = core.GuildStateReady and not inGuild
+		f.RosterCard:SetNote(show and (L["NOTINGUILDNOTICE"] or NOTINGUILD_TEXT) or "")
+		local note = f.RosterCard.Header and f.RosterCard.Header.Note
+		local pal = core.Palette or (core.Palettes and core.Palettes.Forever) or {}
+		local col = pal.warning or pal.textMuted
+		if note and col then note:SetTextColor(unpack(col)) end
+	end
+	-- 4) PM-13.3: an open DKP Modes window (officer writes/broadcasts) closes on demotion / leaving the guild
+	if not officer and core.ModesWindow and core.ModesWindow:IsShown() then core.ModesWindow:Hide() end
+end
+
+-- AD-20.2.4: trailing ~1 s debounce for guild events (same pattern as QueueTalentRefresh).
+function CommDKP:QueueGuildStateRefresh()
+	core.GuildRefreshGen = (core.GuildRefreshGen or 0) + 1
+	local gen = core.GuildRefreshGen
+	C_Timer.After(1, function()
+		if gen ~= core.GuildRefreshGen then return end
+		CommDKP:UpdateGuildUIState(true)
+	end)
+end
+
 function CommDKP:CreateMenu()
 
-	CommDKP.UIConfig = CreateFrame("Frame", "CommDKPConfig", UIParent, "BackdropTemplate")  --UIPanelDialogueTemplate, ShadowOverlaySmallTemplate
-	
-	CommDKP.UIConfig:SetPoint("CENTER", UIParent, "CENTER", -250, 100);
-	CommDKP.UIConfig:SetSize(550, 590);
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig, "Panel", "WindowBgSoft")
-	CommDKP.UIConfig:SetMovable(true);
-	CommDKP.UIConfig:EnableMouse(true);
-	CommDKP.UIConfig:RegisterForDrag("LeftButton");
-	CommDKP.UIConfig:SetScript("OnDragStart", CommDKP.UIConfig.StartMoving);
-	CommDKP.UIConfig:SetScript("OnDragStop", CommDKP.UIConfig.StopMovingOrSizing);
-	CommDKP.UIConfig:SetFrameStrata("DIALOG")
+	-- UX §12.1.1 / AD-16.4 (d): PortraitFrameTemplate + ButtonFrameTemplateNoPortrait NineSlice (gold), rock Bg,
+	-- no Inset well; plaque fallback when the template probe fails. Same code path as every "window" popup.
+	-- chromeOpts nil: the title stays in the template's TitleContainer, after the medallion.
+	local f = CommDKP.Widgets.CreateChromeFrame("CommDKPConfig", UIParent, "window",
+		"CommunityDKP Forever  |cffB9A789" .. tostring(core.SemVer) .. "|r")
+	CommDKP.UIConfig = f
+	f:SetSize(W_EXPANDED, 590);
+	f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 200, -120);   -- ALWAYS a TOPLEFT anchor (§11.1.3)
+	f:SetClampedToScreen(true)
+	f:SetClampRectInsets(-13, 42, 16, -8)                     -- medallion overhang (L/T) + side-tab column (R)
+	f:SetMovable(true);
+	f:EnableMouse(true);
+	f:RegisterForDrag("LeftButton");
+	f:SetScript("OnDragStart", f.StartMoving);
+	f:SetScript("OnDragStop", f.StopMovingOrSizing);
+	CommDKP.UIConfig:SetFrameStrata("DIALOG")       -- unchanged (§10.1.3); outside the floater registry
 	CommDKP.UIConfig:SetFrameLevel(10)
 	CommDKP.UIConfig:SetScript("OnMouseDown", function(self)
 		self:SetFrameLevel(10)
@@ -353,37 +434,67 @@ function CommDKP:CreateMenu()
 		if core.ModesWindow then core.ModesWindow:SetFrameLevel(6) end
 		if core.BiddingWindow then core.BiddingWindow:SetFrameLevel(2) end
 	end)
-	-- Close Button
+	f.closeBtn = f.CloseButton                                -- legacy alias: every UIConfig.closeBtn reference keeps working
+	tinsert(UISpecialFrames, f:GetName()); -- Sets frame to close on "Escape"
 
-	CommDKP.UIConfig.closeContainer = CreateFrame("Frame", "CommDKPTitle", CommDKP.UIConfig, "BackdropTemplate")
+	-- UX §11.1.2 / AD-33.1: top-left corner medallion (decorative; clicks/drags fall through) + title clearance.
+	-- Shared with the Change Log through W.AttachMedallion (BR-25.5).
+	W.AttachMedallion(f, "CommDKPConfigMedallion")
+	f.Version = f.TitleLabel                                -- legacy alias for UIConfig.Version
 
-	CommDKP.UIConfig.closeContainer:SetPoint("CENTER", CommDKP.UIConfig, "TOPRIGHT", -4, 0)
-
-
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig.closeContainer, "Panel", "CloseBg", "CloseBorder")
-	CommDKP.UIConfig.closeContainer:SetSize(28, 28)
-
-	CommDKP.UIConfig.closeBtn = CreateFrame("Button", nil, CommDKP.UIConfig, "UIPanelCloseButton")
-	
-	CommDKP.UIConfig.closeBtn:SetPoint("CENTER", CommDKP.UIConfig.closeContainer, "TOPRIGHT", -14, -14)
-	tinsert(UISpecialFrames, CommDKP.UIConfig:GetName()); -- Sets frame to close on "Escape"
+	-- AD-19.2 (012d) (f) / UX §13.4.4 / BR-12.7: borderless 16x16 Change Log glyph just left of [X].
+	-- Toggles the on-demand Change Log; never writes HideChangeLogs.
+	local clBtn = CreateFrame("Button", "CommDKPConfigChangeLogButton", f)
+	clBtn:SetSize(16, 16)
+	clBtn:SetHitRectInsets(-2, -2, -2, -2)
+	if f.CloseButton then
+		clBtn:SetPoint("RIGHT", f.CloseButton, "LEFT", -2, 0)
+		clBtn:SetFrameLevel(f.CloseButton:GetFrameLevel())
+	else
+		clBtn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -28, -4)
+	end
+	clBtn.Icon = clBtn:CreateTexture(nil, "ARTWORK")
+	clBtn.Icon:SetAllPoints()
+	clBtn.Icon:SetTexture(W.TEX.changelog)
+	local function PalColor(role) return (core.Palette or core.Palettes.Forever)[role] or core.Palettes.Forever[role] end
+	local function PaintCL(self, over)
+		self.Icon:SetVertexColor(unpack(PalColor(over and "gold" or "textMuted")))
+	end
+	PaintCL(clBtn, false)
+	clBtn:SetScript("OnEnter", function(self)
+		PaintCL(self, true)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
+		GameTooltip:SetText(L["CHANGELOGBTN"] or "Change Log", 1, 0.82, 0)
+		GameTooltip:AddLine(tostring(core.SemVer), unpack(PalColor("textMuted")))
+		GameTooltip:Show()
+	end)
+	clBtn:SetScript("OnLeave", function(self)
+		PaintCL(self, false)
+		if GameTooltip then GameTooltip:Hide() end
+	end)
+	clBtn:SetScript("OnMouseDown", function(self) self.Icon:ClearAllPoints(); self.Icon:SetPoint("TOPLEFT", 1, -1); self.Icon:SetPoint("BOTTOMRIGHT", 1, -1) end)
+	clBtn:SetScript("OnMouseUp", function(self) self.Icon:ClearAllPoints(); self.Icon:SetAllPoints() end)
+	clBtn:SetScript("OnClick", function() CommDKP:ToggleChangeLog() end)
+	f.ChangeLogBtn = clBtn
 	---------------------------------------
 	-- Create and Populate Tab Menu and DKP Table
 	---------------------------------------
 	CommDKP.TabMenu = CommDKP:ConfigMenuTabs();        -- Create and populate Config Menu Tabs
+	-- UX §12.3.1 Roster Card (516 x 524 at (14, -52)): 28 px "DKP Roster" page header, 24 px column strip,
+	-- 23 rows + rail, 34 px footer (pip · search · count · team selector). DKPTable_Create builds into its body.
+	CommDKP.UIConfig.RosterCard = W.CreateCard(CommDKP.UIConfig, L["CARDROSTER"], 516, 524, { page = true, footer = 34 })
+	CommDKP.UIConfig.RosterCard:SetPoint("TOPLEFT", CommDKP.UIConfig, "TOPLEFT", 14, -52)
+	local rosterBody, rosterFooter = CommDKP.UIConfig.RosterCard.Body, CommDKP.UIConfig.RosterCard.Footer
 	CommDKP:DKPTable_Create();                        -- Create DKPTable and populate rows
-	CommDKP.UIConfig.TabMenu:Hide()                   -- Hide menu until expanded
 	---------------------------------------
 	-- DKP Table Header and Sort Buttons
 	---------------------------------------
 
-	CommDKP.DKPTable_Headers = CreateFrame("Frame", "CommDKPDKPTableHeaders", CommDKP.UIConfig, "BackdropTemplate")
-	
-	CommDKP.DKPTable_Headers:SetSize(500, 22)
-	CommDKP.DKPTable_Headers:SetPoint("BOTTOMLEFT", CommDKP.DKPTable, "TOPLEFT", 0, 1)
-
-	
-	CommDKP:ApplyBackdrop(CommDKP.DKPTable_Headers, "TableBorder", "HeaderBg", "TableBorder")
+	-- §12.2.10 column strip (24 px, global name kept so the "$parent..." sort-button names still resolve).
+	CommDKP.DKPTable_Headers = W.CreateColumnStrip(rosterBody, 24, "CommDKPDKPTableHeaders")
+	CommDKP.DKPTable_Headers:SetPoint("TOPLEFT", rosterBody, "TOPLEFT", 0, 0)
+	CommDKP.DKPTable_Headers:SetPoint("TOPRIGHT", rosterBody, "TOPRIGHT", 0, 0)
 	CommDKP.DKPTable_Headers:Show()
 	---------------------------------------
 	-- Sort Buttons
@@ -393,13 +504,12 @@ function CommDKP:CreateMenu()
 	SortButtons.class = CreateFrame("Button", "$ParentSortButtonClass", CommDKP.DKPTable_Headers, "BackdropTemplate")
 	SortButtons.dkp = CreateFrame("Button", "$ParentSortButtonDkp", CommDKP.DKPTable_Headers, "BackdropTemplate")
 	
-	SortButtons.class:SetPoint("BOTTOM", CommDKP.DKPTable_Headers, "BOTTOM", 0, 2)
+	SortButtons.class:SetPoint("CENTER", CommDKP.DKPTable_Headers, "LEFT", core.TableWidth / 2, 0)   -- centered on the 500 px table
 	SortButtons.player:SetPoint("RIGHT", SortButtons.class, "LEFT")
 	SortButtons.dkp:SetPoint("LEFT", SortButtons.class, "RIGHT")
 	 
 	for k, v in pairs(SortButtons) do
 		v.Id = k
-		v:SetHighlightTexture("Interface\\BUTTONS\\BlueGrad64_faded.blp");
 		v:SetSize((core.TableWidth/3)-1, core.TableRowHeight)
 		if v.Id == "class" then
 			v:SetScript("OnClick", function(self) CommDKP:SortDKPTable(core.CenterSort, "Clear") end)
@@ -411,96 +521,96 @@ function CommDKP:CreateMenu()
 	SortButtons.class:SetSize((core.TableWidth*0.2)-1, core.TableRowHeight)
 	SortButtons.dkp:SetSize((core.TableWidth*0.4)-1, core.TableRowHeight)
 
-	SortButtons.player.t = SortButtons.player:CreateFontString(nil, "OVERLAY")
-	SortButtons.player.t:SetFontObject("CommDKPNormal")
-	SortButtons.player.t:SetTextColor(1, 1, 1, 1);
-	SortButtons.player.t:SetPoint("LEFT", SortButtons.player, "LEFT", 50, 0);
-	SortButtons.player.t:SetText(L["PLAYER"]); 
-
-	--[[SortButtons.class.t = SortButtons.class:CreateFontString(nil, "OVERLAY")
-	SortButtons.class.t:SetFontObject("CommDKPNormal");
-	SortButtons.class.t:SetTextColor(1, 1, 1, 1);
-	SortButtons.class.t:SetPoint("CENTER", SortButtons.class, "CENTER", 0, 0);
-	SortButtons.class.t:SetText(L["CLASS"]); --]]
+	SortButtons.player.t = W.CreateText(SortButtons.player, "label", L["PLAYER"], "CENTER")   -- §12.2.10 gold column label
+	SortButtons.player.t:SetPoint("CENTER", SortButtons.player, "CENTER", 0, 0);
 
 	-- center column dropdown (class, rank, spec etc..)
-	SortButtons.class.t = LibDD:Create_UIDropDownMenu("CommDKPSortColDropdown", SortButtons.class)
-	SortButtons.class.t:SetPoint("CENTER", SortButtons.class, "CENTER", 4, -3)
-	LibDD:UIDropDownMenu_JustifyText(SortButtons.class.t, "CENTER")
-	LibDD:UIDropDownMenu_SetWidth(SortButtons.class.t, 80)
-	LibDD:UIDropDownMenu_SetText(SortButtons.class.t, L["CLASS"])
-	LibDD:UIDropDownMenu_Initialize(SortButtons.class.t, function(self, level, menuList)
-		
-	local reason = LibDD:UIDropDownMenu_CreateInfo()
+	-- §12.3.1: the one 18 px flat selector (92 wide) so it fits the 24 px strip with 3 px clearance (AC-9.4).
+	SortButtons.class.t = DD:Create_UIDropDownMenu("CommDKPSortColDropdown", SortButtons.class)
+	SortButtons.class.t:SetPoint("CENTER", SortButtons.class, "CENTER", 0, 0)
+	SortButtons.class.t:SetHeight(18)
+	DD:UIDropDownMenu_JustifyText(SortButtons.class.t, "CENTER")
+	DD:UIDropDownMenu_SetWidth(SortButtons.class.t, 92)
+	DD:UIDropDownMenu_SetText(SortButtons.class.t, L["CLASS"])
+	DD:UIDropDownMenu_Initialize(SortButtons.class.t, function(self, level, menuList)
+
+	local reason = DD:UIDropDownMenu_CreateInfo()
 		reason.func = self.SetValue
-		reason.fontObject = "CommDKPSmallCenter"
 		reason.text, reason.arg1, reason.arg2, reason.checked, reason.isNotRadio = L["CLASS"], "class", L["CLASS"], "class" == core.CenterSort, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.arg2, reason.checked, reason.isNotRadio = L["SPEC"], "spec", L["SPEC"], "spec" == core.CenterSort, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.arg2, reason.checked, reason.isNotRadio = L["RANK"], "rank", L["RANK"], "rank" == core.CenterSort, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.arg2, reason.checked, reason.isNotRadio = L["ROLE"], "role", L["ROLE"], "role" == core.CenterSort, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 		reason.text, reason.arg1, reason.arg2, reason.checked, reason.isNotRadio = L["VERSION"], "version", L["VERSION"], "version" == core.CenterSort, true
-		LibDD:UIDropDownMenu_AddButton(reason)
+		DD:UIDropDownMenu_AddButton(reason)
 	end)
 	-- Dropdown Menu Function
 	function SortButtons.class.t:SetValue(newValue, arg2)
 		core.CenterSort = newValue
 		SortButtons.class.Id = newValue;
-		LibDD:UIDropDownMenu_SetText(SortButtons.class.t, arg2)
+		DD:UIDropDownMenu_SetText(SortButtons.class.t, arg2)
 		CommDKP:SortDKPTable(newValue, "reset")
 		core.currentSort = newValue;
 		LibDD:CloseDropDownMenus()
 	end
-	SortButtons.dkp.t = SortButtons.dkp:CreateFontString(nil, "OVERLAY")
-	SortButtons.dkp.t:SetFontObject("CommDKPNormal")
-	SortButtons.dkp.t:SetTextColor(1, 1, 1, 1);
+	SortButtons.dkp.t = W.CreateText(SortButtons.dkp, "label", nil, "CENTER")
 	if core.DB.modes.mode == "Roll Based Bidding" then
 		SortButtons.dkp.t:SetPoint("RIGHT", SortButtons.dkp, "RIGHT", -50, 0);
 		SortButtons.dkp.t:SetText(L["TOTALDKP"]);
 
-		SortButtons.dkp.roll = SortButtons.dkp:CreateFontString(nil, "OVERLAY");
-		SortButtons.dkp.roll:SetFontObject("CommDKPNormal")
-		SortButtons.dkp.roll:SetScale("0.8")
-		SortButtons.dkp.roll:SetTextColor(1, 1, 1, 1);
+		SortButtons.dkp.roll = W.CreateText(SortButtons.dkp, "label", nil, "LEFT");
 		SortButtons.dkp.roll:SetPoint("LEFT", SortButtons.dkp, "LEFT", 20, -1);
 		SortButtons.dkp.roll:SetText(L["ROLLRANGE"])
 	else
-		SortButtons.dkp.t:SetPoint("CENTER", SortButtons.dkp, "CENTER", 20, 0);
+		SortButtons.dkp.t:SetPoint("CENTER", SortButtons.dkp, "CENTER", 0, 0);
 		SortButtons.dkp.t:SetText(L["TOTALDKP"]);
 	end
 	----- Counter below DKP Table
-	CommDKP.DKPTable.counter = CreateFrame("Frame", "CommDKPDisplayFrameCounter", CommDKP.UIConfig);
-	CommDKP.DKPTable.counter:SetPoint("TOP", CommDKP.DKPTable, "BOTTOM", 0, 0)
-	CommDKP.DKPTable.counter:SetSize(400, 30)
+	-- AD-19.2 (012d) (a) / UX §13.2: every footer element sits on the footer's vertical midline (y = 0).
+	-- Slots: pip x 10 · search x 34-170 · counter centred at x 240 (174-306) · "Team:" label · dropdown x 350-500.
+	local counter = CreateFrame("Frame", "CommDKPDisplayFrameCounter", rosterFooter)
+	CommDKP.DKPTable.counter = counter
+	counter:SetPoint("CENTER", rosterFooter, "LEFT", 240, 0)
+	counter:SetSize(132, 30)
 
-	CommDKP.DKPTable.counter.t = CommDKP.DKPTable.counter:CreateFontString(nil, "OVERLAY")
-	CommDKP.DKPTable.counter.t:SetFontObject("CommDKPNormal");
-	CommDKP.DKPTable.counter.t:SetTextColor(1, 1, 1, 0.7);
-	CommDKP.DKPTable.counter.t:SetPoint("CENTER", CommDKP.DKPTable.counter, "CENTER");
-
-	CommDKP.DKPTable.counter.s = CommDKP.DKPTable.counter:CreateFontString(nil, "OVERLAY")
-	CommDKP.DKPTable.counter.s:SetFontObject("CommDKPTiny");
-	CommDKP.DKPTable.counter.s:SetTextColor(1, 1, 1, 0.7);
-	CommDKP.DKPTable.counter.s:SetPoint("CENTER", CommDKP.DKPTable.counter, "CENTER", 0, -15);
+	counter.t = W.CreateText(counter, "caption", nil, "CENTER", "textMuted")
+	counter.s = W.CreateText(counter, "caption", nil, "CENTER", "textMuted")
+	for _, fs in ipairs({ counter.t, counter.s }) do
+		if fs.SetWordWrap then fs:SetWordWrap(false) end
+		if fs.SetJustifyH then fs:SetJustifyH("CENTER") end
+	end
+	-- counter.t / counter.s are written by TableFunctions.lua; the relayout follows every counter.s:SetText.
+	-- s empty: t alone on the midline. s set: t above / s below, the 2-line block centred on the midline.
+	local function RelayoutCounter()
+		local s = counter.s:GetText()
+		counter.t:ClearAllPoints(); counter.s:ClearAllPoints()
+		if s == nil or s == "" then
+			counter.t:SetPoint("CENTER", counter, "CENTER", 0, 0)
+			counter.s:SetPoint("TOP", counter, "CENTER", 0, -1)
+		else
+			counter.t:SetPoint("BOTTOM", counter, "CENTER", 0, 1)
+			counter.s:SetPoint("TOP", counter, "CENTER", 0, -1)
+		end
+	end
+	counter.Relayout = RelayoutCounter
+	RelayoutCounter()
+	hooksecurefunc(counter.s, "SetText", RelayoutCounter)
 	------------------------------
 	-- Search Box
 	------------------------------
 
-	CommDKP.UIConfig.search = CreateFrame("EditBox", nil, CommDKP.UIConfig, "BackdropTemplate")
-	
-	CommDKP.UIConfig.search:SetPoint("BOTTOMLEFT", CommDKP.UIConfig, "BOTTOMLEFT", 50, 18)
+	-- UX §13.2 footer: 136 x 22 at x 34. "Search" is a placeholder (it replaces the old hint-in-the-value text and its
+	-- focus swap); FilterDKPTable's `~= L["SEARCH"] and ~= ""` check is unchanged and still correct.
+	CommDKP.UIConfig.search = CreateFrame("EditBox", nil, rosterFooter)
+
+	CommDKP.UIConfig.search:SetPoint("LEFT", rosterFooter, "LEFT", 34, 0)
 	CommDKP.UIConfig.search:SetAutoFocus(false)
 	CommDKP.UIConfig.search:SetMultiLine(false)
-	CommDKP.UIConfig.search:SetSize(140, 24)
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig.search, "Panel", "InputBg", "InputBorder")
+	CommDKP.UIConfig.search:SetSize(136, W.H)
 	CommDKP.UIConfig.search:SetMaxLetters(50)
-	CommDKP.UIConfig.search:SetTextColor(0.4, 0.4, 0.4, 1)
-	CommDKP.UIConfig.search:SetFontObject("CommDKPNormalLeft")
-	CommDKP.UIConfig.search:SetTextInsets(10, 10, 5, 5)
-	CommDKP.UIConfig.search:SetText(L["SEARCH"])
 	CommDKP.UIConfig.search:SetScript("OnKeyUp", function(self)    -- clears text and focus on esc
 		if (CommDKP.UIConfig.search:GetText():match("[%^%$%(%)%%%.%[%]%*%+%-%?]")) then
 			CommDKP.UIConfig.search:SetText(string.gsub(CommDKP.UIConfig.search:GetText(), "[%^%$%(%)%%%.%[%]%*%+%-%?]", ""))
@@ -510,8 +620,7 @@ function CommDKP:CreateMenu()
 		end
 	end)
 	CommDKP.UIConfig.search:SetScript("OnEscapePressed", function(self)    -- clears text and focus on esc
-		self:SetText(L["SEARCH"])
-		self:SetTextColor(0.3, 0.3, 0.3, 1)
+		self:SetText("")
 		self:ClearFocus()
 		CommDKP:FilterDKPTable(core.currentSort, "reset")
 	end)
@@ -522,18 +631,7 @@ function CommDKP:CreateMenu()
 		self:ClearFocus()
 	end)
 	CommDKP.UIConfig.search:SetScript("OnEditFocusGained", function(self)
-		if (self:GetText() ==  L["SEARCH"]) then
-			self:SetText("");
-			self:SetTextColor(1, 1, 1, 1)
-		else
-			self:HighlightText();
-		end
-	end)
-	CommDKP.UIConfig.search:SetScript("OnEditFocusLost", function(self)
-		if (self:GetText() == "") then
-			self:SetText(L["SEARCH"])
-			self:SetTextColor(0.3, 0.3, 0.3, 1)
-		end
+		self:HighlightText();
 	end)
 	CommDKP.UIConfig.search:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
@@ -544,14 +642,14 @@ function CommDKP:CreateMenu()
 	CommDKP.UIConfig.search:SetScript("OnLeave", function(self)
 		GameTooltip:Hide();
 	end)
+	W.StyleEditBox(CommDKP.UIConfig.search, { placeholder = strtrim(L["SEARCH"]), align = "LEFT" })   -- after its SetScripts
 
 	------------------------------
 	-- Team view changer Drop Down
 	------------------------------
 
-		CommDKP.UIConfig.TeamViewChangerDropDown = LibDD:Create_UIDropDownMenu("CommDKPConfigReasonDropDown", CommDKP.UIConfig);
-		--CommDKP.ConfigTab3.TeamManagementContainer.TeamListDropDown:ClearAllPoints()
-		CommDKP.UIConfig.TeamViewChangerDropDown:SetPoint("BOTTOMLEFT", CommDKP.UIConfig, "BOTTOMLEFT", 340, 4)
+		CommDKP.UIConfig.TeamViewChangerDropDown = DD:Create_UIDropDownMenu("CommDKPConfigReasonDropDown", rosterFooter);
+		CommDKP.UIConfig.TeamViewChangerDropDown:SetPoint("RIGHT", rosterFooter, "RIGHT", -10, 0)   -- UX §13.2: pip-to-edge 10 = dropdown-to-edge 10
 		-- tooltip on mouseOver
 		CommDKP.UIConfig.TeamViewChangerDropDown:SetScript("OnEnter", 
 			function(self) 
@@ -568,16 +666,16 @@ function CommDKP:CreateMenu()
 				GameTooltip:Hide()
 			end
 		)
-		LibDD:UIDropDownMenu_SetWidth(CommDKP.UIConfig.TeamViewChangerDropDown, 150)
-		LibDD:UIDropDownMenu_SetText(CommDKP.UIConfig.TeamViewChangerDropDown, CommDKP:GetCurrentTeamName())
+		DD:UIDropDownMenu_SetWidth(CommDKP.UIConfig.TeamViewChangerDropDown, 150)
+		DD:UIDropDownMenu_SetText(CommDKP.UIConfig.TeamViewChangerDropDown, CommDKP:GetCurrentTeamName())
 
 		-- Create and bind the initialization function to the dropdown menu
-		LibDD:UIDropDownMenu_Initialize(CommDKP.UIConfig.TeamViewChangerDropDown, 
+		DD:UIDropDownMenu_Initialize(CommDKP.UIConfig.TeamViewChangerDropDown, 
 			function(self, level, menuList)
 				
-				local dropDownMenuItem = LibDD:UIDropDownMenu_CreateInfo()
+				local dropDownMenuItem = DD:UIDropDownMenu_CreateInfo()
 				dropDownMenuItem.func = self.SetValue
-				dropDownMenuItem.fontObject = "CommDKPSmallCenter"
+
 			
 				teamList = CommDKP:GetGuildTeamList()
 
@@ -587,7 +685,7 @@ function CommDKP:CreateMenu()
 					dropDownMenuItem.arg2 = teamList[i][1] -- index
 					dropDownMenuItem.checked = teamList[i][1] == tonumber(CommDKP:GetCurrentTeamIndex())
 					dropDownMenuItem.isNotRadio = true
-					LibDD:UIDropDownMenu_AddButton(dropDownMenuItem)
+					DD:UIDropDownMenu_AddButton(dropDownMenuItem)
 				end
 			end
 		)
@@ -599,7 +697,7 @@ function CommDKP:CreateMenu()
 				if core.RaidInProgress == false and core.RaidInPause == false then
 					CommDKP:SetCurrentTeam(arg2)
 					CommDKP:SortDKPTable(core.currentSort, "reset")
-					LibDD:UIDropDownMenu_SetText(CommDKP.UIConfig.TeamViewChangerDropDown, arg1)
+					DD:UIDropDownMenu_SetText(CommDKP.UIConfig.TeamViewChangerDropDown, arg1)
 				else
 					StaticPopupDialogs["RAID_IN_PROGRESS"] = {
 						text = L["TEAMCHANGERAIDINPROGRESS"],
@@ -616,159 +714,140 @@ function CommDKP:CreateMenu()
 			end
 		end
 
-		CommDKP.UIConfig.TeamViewChangerLabel = CommDKP.UIConfig.TeamViewChangerDropDown:CreateFontString(nil, "OVERLAY")
-		CommDKP.UIConfig.TeamViewChangerLabel:SetPoint("TOPLEFT", CommDKP.UIConfig.TeamViewChangerDropDown, "TOPLEFT", 17, 13);
-		CommDKP.UIConfig.TeamViewChangerLabel:SetFontObject("CommDKPTiny");
-		CommDKP.UIConfig.TeamViewChangerLabel:SetTextColor(1, 1, 1, 0.7);
-		CommDKP.UIConfig.TeamViewChangerLabel:SetText(L["TEAMCURRENTLISTLABEL"]);
+		CommDKP.UIConfig.TeamViewChangerLabel = W.CreateText(rosterFooter, "caption", L["TEAMCURRENTLISTLABEL"] or "Team:", "RIGHT", "textMuted")   -- UX §13.2 / Q3
+		CommDKP.UIConfig.TeamViewChangerLabel:SetPoint("RIGHT", CommDKP.UIConfig.TeamViewChangerDropDown, "LEFT", -6, 0);
 
 	---------------------------------------
-	-- Expand / Collapse Arrow
+	-- UX §11.1.3: /dkp always opens expanded on Tab 1 (Filters)
 	---------------------------------------
-
-	CommDKP.UIConfig.expand = CreateFrame("Frame", "CommDKPTitle", CommDKP.UIConfig, "BackdropTemplate")
-	
-	CommDKP.UIConfig.expand:SetPoint("LEFT", CommDKP.UIConfig, "RIGHT", 0, 0)
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig.expand, "Fill", "StatusBg")
-	CommDKP.UIConfig.expand:SetSize(15, 60)
-	
-	CommDKP.UIConfig.expandtab = CommDKP.UIConfig.expand:CreateTexture(nil, "OVERLAY", nil);
-	CommDKP.UIConfig.expandtab:SetColorTexture(0, 0, 0, 1)
-	CommDKP.UIConfig.expandtab:SetPoint("CENTER", CommDKP.UIConfig.expand, "CENTER");
-	CommDKP.UIConfig.expandtab:SetSize(15, 60);
-	CommDKP.UIConfig.expandtab:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\expand-arrow.tga");
-
-	CommDKP.UIConfig.expand.trigger = CreateFrame("Button", "$ParentCollapseExpandButton", CommDKP.UIConfig.expand)
-	CommDKP.UIConfig.expand.trigger:SetSize(15, 60)
-	CommDKP.UIConfig.expand.trigger:SetPoint("CENTER", CommDKP.UIConfig.expand, "CENTER", 0, 0)
-	CommDKP.UIConfig.expand.trigger:SetScript("OnClick", function(self) 
-		if core.ShowState == false then
-			CommDKP.UIConfig:SetWidth(1106)
-			CommDKP.UIConfig.TabMenu:Show()
-			CommDKP.UIConfig.expandtab:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\collapse-arrow");
-		else
-			CommDKP.UIConfig:SetWidth(550)
-			CommDKP.UIConfig.TabMenu:Hide()
-			CommDKP.UIConfig.expandtab:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\expand-arrow");
-		end
-		PlaySound(62540)
-		core.ShowState = not core.ShowState
-	end)
-
-	-- Title Frame (top/center)
-
-	CommDKP.UIConfig.TitleBar = CreateFrame("Frame", "CommDKPTitle", CommDKP.UIConfig, "BackdropTemplate")
-	
-	CommDKP.UIConfig.TitleBar:SetPoint("BOTTOM", SortButtons.class, "TOP", 0, 10)
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig.TitleBar, "Panel", "TitleBg")
-	CommDKP.UIConfig.TitleBar:SetSize(198, 54)		-- CDKP-005 (ux_design_spec §6): 192x48 banner + 3px Panel edge each side
-
-	-- Addon Title (Gate 2 banner: 256x64 source, drawn at true 4:1. No solid fill behind it: the banner is
-	-- transparent and the TitleBar's Panel backdrop supplies the background.)
-	CommDKP.UIConfig.Title = CommDKP.UIConfig.TitleBar:CreateTexture(nil, "OVERLAY", nil);   -- Title Bar Texture
-	CommDKP.UIConfig.Title:SetPoint("CENTER", CommDKP.UIConfig.TitleBar, "CENTER");
-	CommDKP.UIConfig.Title:SetSize(192, 48);
-	CommDKP.UIConfig.Title:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\community-dkp.tga");
+	f:HookScript("OnShow", function() CommDKP:SelectSideTab(1, true) end)
 	---------------------------------------
 	-- CHANGE LOG WINDOW
 	---------------------------------------
-	if core.DB.defaults.HideChangeLogs < core.BuildNumber then
-		-- UX §7.4: native Blizzard window (NineSlice border, metallic title bar, CloseButton, InsetBg).
-		-- No custom backdrop here: the template owns all chrome.
-		local CL_FRAME_WIDTH, CL_TEXT_WIDTH, CL_MIN_HEIGHT, CL_MAX_HEIGHT = 600, 552, 220, 560
-		local f = CreateFrame("Frame", "CommDKP_ChangeLogDisplay", UIParent, "BasicFrameTemplateWithInset");
-		CommDKP.ChangeLogDisplay = f
-
-		f:SetPoint("TOP", UIParent, "TOP", 0, -200);
-		f:SetSize(CL_FRAME_WIDTH, CL_MIN_HEIGHT);
-		CommDKP:FocusChangeLog(true)   -- FULLSCREEN: pops up in front of UIConfig (DIALOG) and DKP Modes; see FocusWindow
-		f:SetToplevel(true)
-		f:SetClampedToScreen(true)
-		f:SetMovable(true);
-		f:EnableMouse(true);
-		f:RegisterForDrag("LeftButton");
-		f:SetScript("OnMouseDown", function() CommDKP:FocusChangeLog(true) end)
-		f:SetScript("OnDragStart", function(self) CommDKP:FocusChangeLog(true); self:StartMoving() end);
-		f:SetScript("OnDragStop", f.StopMovingOrSizing);
-		CommDKP:RegisterFloater(f)      -- UX §10.1.3: after the SetScripts above so the registry hooks survive
-		CommDKP:FocusChangeLog(true)    -- created shown (no OnShow): start focused in FULLSCREEN
-		tinsert(UISpecialFrames, "CommDKP_ChangeLogDisplay")   -- Esc closes it
-
-		local titleText = f.TitleText or (f.TitleContainer and f.TitleContainer.TitleText)
-		if not titleText then
-			titleText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-			titleText:SetPoint("TOP", f, "TOP", 0, -5)
-		end
-		titleText:SetText("CommunityDKP Forever \226\128\148 Change Log  (" .. tostring(core.MonVersion) .. ")")
-		f.TitleLabel = titleText
-
-		local inset = f.InsetBg or f.Inset or f
-
-		f.Notes = f:CreateFontString(nil, "OVERLAY")
-		f.Notes:SetWidth(CL_TEXT_WIDTH)
-		f.Notes:SetFontObject("CommDKPNormalLeft")
-		f.Notes:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -10);
-
-		f.VerNumber = f:CreateFontString(nil, "OVERLAY")
-		f.VerNumber:SetWidth(CL_TEXT_WIDTH)
-		f.VerNumber:SetFontObject("GameFontNormal")
-
-		f.ChangeLogText = f:CreateFontString(nil, "OVERLAY")
-		f.ChangeLogText:SetWidth(CL_TEXT_WIDTH - 6)
-		f.ChangeLogText:SetFontObject("CommDKPNormalLeft")
-		f.ChangeLogText:SetPoint("TOPLEFT", f.VerNumber, "BOTTOMLEFT", 6, -6);
-
-		f.DontShowCheck = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
-		f.DontShowCheck:SetSize(24, 24)
-		f.DontShowCheck:SetChecked(false)
-		f.DontShowCheck:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 10);
-		local dsText = f.DontShowCheck.text or f.DontShowCheck.Text
-		if dsText then
-			dsText:SetFontObject("GameFontHighlightSmall")
-			dsText:SetText(L["DONTSHOW"]);
-		end
-		f.DontShowCheck:SetScript("OnClick", function(self)
-			if self:GetChecked() then
-				core.DB.defaults.HideChangeLogs = core.BuildNumber
-			else
-				core.DB.defaults.HideChangeLogs = 0
-			end
-		end)
-
-		local hasNotes = L["BESTPRACTICES"] ~= nil and L["BESTPRACTICES"] ~= ""
-		if hasNotes then
-			f.Notes:SetText("|CFFAEAEDD"..L["BESTPRACTICES"].."|r")
-			f.VerNumber:SetPoint("TOPLEFT", f.Notes, "BOTTOMLEFT", 0, -12);
-		else
-			f.VerNumber:SetPoint("TOPLEFT", inset, "TOPLEFT", 12, -10);
-		end
-		f.VerNumber:SetText("Version: "..core.MonVersion)
-
-		--------------------------------------
-		-- ChangeLog variable calls (bottom of localization files)
-		--------------------------------------
-		f.ChangeLogText:SetText(CommDKP:BuildChangeLogText());  -- AD-9.7: empty lines skipped
-
-		local body = (hasNotes and (f.Notes:GetStringHeight() + 12) or 0)
-			+ f.VerNumber:GetStringHeight() + 6 + f.ChangeLogText:GetStringHeight()
-		local h = 24 + 10 + body + 12 + 36 + 6   -- title bar, inset pad, body, gap, footer, edge
-		f:SetSize(CL_FRAME_WIDTH, math.max(CL_MIN_HEIGHT, math.min(h, CL_MAX_HEIGHT)));  -- resize container
-
-	end
-	---------------------------------------
-	-- VERSION IDENTIFIER
-	---------------------------------------
-	local c = CommDKP:GetThemeColor();
-	CommDKP.UIConfig.Version = CommDKP.UIConfig.TitleBar:CreateFontString(nil, "OVERLAY")   -- not in a function so requires CreateFontString
-	CommDKP.UIConfig.Version:ClearAllPoints();
-	CommDKP.UIConfig.Version:SetFontObject("CommDKPSmallCenter");
-	CommDKP.UIConfig.Version:SetScale("0.9")
-	CommDKP.UIConfig.Version:SetTextColor(c[1].r, c[1].g, c[1].b, 0.5);
-	CommDKP.UIConfig.Version:SetPoint("BOTTOMRIGHT", CommDKP.UIConfig.TitleBar, "BOTTOMRIGHT", -8, 4);
-	CommDKP.UIConfig.Version:SetText(core.SemVer); 
-
+	if core.DB.defaults.HideChangeLogs < core.BuildNumber then CommDKP:CreateChangeLog() end
 	CommDKP.UIConfig:Hide(); -- hide menu after creation until called.
 	CommDKP:FilterDKPTable(core.currentSort)   -- initial sort and populates data values in DKPTable.Rows{} CommDKP:FilterDKPTable() -> CommDKP:SortDKPTable() -> CommDKP:DKPTable_Update()
+	CommDKP:UpdateGuildUIState()               -- AD-20.2.2: RosterCard + side-tabs exist now
 	core.Initialized = true
 	return CommDKP.UIConfig;
+end
+
+---------------------------------------
+-- AD-19.2 (012d) (f) / BR-12.7: Change Log window, built on demand (login path when HideChangeLogs < BuildNumber,
+-- or the header-rail button). Idempotent; builds shown and focused.
+---------------------------------------
+function CommDKP:CreateChangeLog()
+	if CommDKP.ChangeLogDisplay then return CommDKP.ChangeLogDisplay end
+	-- UX §12.4.1 / AD-16.4: "window" chrome (PortraitFrameTemplate, NoPortrait NineSlice, no Inset well), plaque
+	-- fallback. Built on the shared chrome path (not the factory: it is created shown and keeps its own focus scripts).
+	-- PM-025.1 / AD-33: narrow Q9 exception for this window only. The Change Log opens unprompted at login, so its title
+	-- names the addon (main-window header style: gold name, muted parchment window name). The version stays in the body
+	-- heading. chromeOpts nil (no titleInset): the template TitleContainer starts after the medallion, as on the main window.
+	-- Auto-height logic is unchanged (220..560).
+	local CL_FRAME_WIDTH, CL_TEXT_WIDTH, CL_MIN_HEIGHT, CL_MAX_HEIGHT = 600, 540, 220, 560
+	local f = CommDKP.Widgets.CreateChromeFrame("CommDKP_ChangeLogDisplay", UIParent, "window",
+		"CommunityDKP Forever  |cffB9A789" .. (L["CHANGELOGBTN"] or "Change Log") .. "|r")
+	W.AttachMedallion(f, "CommDKP_ChangeLogMedallion")   -- BR-25.2 / BR-25.4: same helper as CommDKPConfigMedallion
+	CommDKP.Widgets.LayoutContent(f)   -- f.Content (= f.ContentInset)
+	CommDKP.ChangeLogDisplay = f
+
+	f:SetPoint("TOP", UIParent, "TOP", 0, -200);
+	f:SetSize(CL_FRAME_WIDTH, CL_MIN_HEIGHT);
+	CommDKP:FocusChangeLog(true)   -- FULLSCREEN: pops up in front of UIConfig (DIALOG) and DKP Modes; see FocusWindow
+	f:SetToplevel(true)
+	f:SetClampedToScreen(true)
+	f:SetClampRectInsets(-13, 0, 16, 0)   -- AD-33 / BR-25.6: medallion overhang (L/T), same as UIConfig's L/T insets
+	f:SetMovable(true);
+	f:EnableMouse(true);
+	f:RegisterForDrag("LeftButton");
+	f:SetScript("OnMouseDown", function() CommDKP:FocusChangeLog(true) end)
+	f:SetScript("OnDragStart", function(self) CommDKP:FocusChangeLog(true); self:StartMoving() end);
+	f:SetScript("OnDragStop", f.StopMovingOrSizing);
+	CommDKP:RegisterFloater(f)      -- UX §10.1.3: after the SetScripts above so the registry hooks survive
+	CommDKP:FocusChangeLog(true)    -- created shown (no OnShow): start focused in FULLSCREEN
+	tinsert(UISpecialFrames, "CommDKP_ChangeLogDisplay")   -- Esc closes it
+
+	local inset = f.Content
+
+	-- ForeverGold page heading: gold GameFontNormalLarge, centered at the top of the content area.
+	f.VerNumber = W.CreateText(inset, "title", "Version " .. tostring(core.SemVer), "CENTER", "gold")
+	f.VerNumber:SetPoint("TOP", inset, "TOP", 0, -4)
+
+	-- What's New card (y 30, fills to -46 from the frame bottom) holding a scroll region (thin rail on overflow).
+	f.WhatsNew = W.CreateCard(inset, L["CARDWHATSNEW"])
+	f.WhatsNew:SetPoint("TOPLEFT", inset, "TOPLEFT", 0, -30)
+	f.WhatsNew:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", 0, 34)
+	f.WhatsNewScroll = W.CreateScrollRegion(f.WhatsNew.Body, { step = 40 })
+	f.WhatsNewScroll:SetPoint("TOPLEFT", f.WhatsNew.Body, "TOPLEFT", 8, -6)
+	f.WhatsNewScroll:SetPoint("BOTTOMRIGHT", f.WhatsNew.Body, "BOTTOMRIGHT", -16, 6)
+	local child = f.WhatsNewScroll.ScrollChild
+	child:SetSize(CL_TEXT_WIDTH, 1)
+
+	local y = -4
+	local hasNotes = L["BESTPRACTICES"] ~= nil and L["BESTPRACTICES"] ~= ""
+	if hasNotes then
+		f.Notes = W.CreateCaption(child, L["BESTPRACTICES"], 6)
+		f.Notes:SetWidth(CL_TEXT_WIDTH)
+		f.Notes:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y)
+		y = y - f.Notes:GetStringHeight() - 10
+	end
+
+	-- CHANGELOG2..8 as bullets: gold dot + GameFontHighlight text, 14 px hanging indent, leading "- " stripped,
+	-- empty keys skipped (AD-9.7). CHANGELOG1 is carried by the title + version heading (§12.4.1).
+	f.Bullets = {}
+	for i = 2, 8 do
+		local s = L["CHANGELOG" .. i]
+		if s and s ~= "" then
+			s = s:gsub("^%-%s*", "")
+			local dot = W.CreateText(child, "body", "\226\128\162", "LEFT", "gold")
+			dot:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y)
+			local line = W.CreateText(child, "body", s, "LEFT")
+			line:SetWidth(CL_TEXT_WIDTH - 14)
+			if line.SetWordWrap then line:SetWordWrap(true) end
+			if line.SetSpacing then line:SetSpacing(3) end
+			line:SetPoint("TOPLEFT", child, "TOPLEFT", 14, y)
+			f.Bullets[#f.Bullets + 1] = line
+			y = y - line:GetStringHeight() - 6
+		end
+	end
+
+	-- 1 px rule, then CHANGELOG9 / CHANGELOG10 as muted captions.
+	f.ChangeLogRule = child:CreateTexture(nil, "BORDER")
+	f.ChangeLogRule:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y - 4)
+	f.ChangeLogRule:SetSize(CL_TEXT_WIDTH, 1)
+	f.ChangeLogRule:SetColorTexture(unpack((core.Palette or core.Palettes.Forever).rule))
+	y = y - 12
+	for i = 9, 10 do
+		local s = L["CHANGELOG" .. i]
+		if s and s ~= "" then
+			local cap = W.CreateCaption(child, s, 2)
+			cap:SetWidth(CL_TEXT_WIDTH)
+			cap:SetPoint("TOPLEFT", child, "TOPLEFT", 0, y)
+			y = y - cap:GetStringHeight() - 4
+		end
+	end
+	local body = -y + 4
+	child:SetHeight(body)
+
+	f.DontShowCheck = W.CreateCheckbox(f, nil, L["DONTSHOW"]);
+	f.DontShowCheck:SetChecked((tonumber(core.DB.defaults.HideChangeLogs) or 0) >= core.BuildNumber)   -- AD-19.2 (012d) (f): saved truth
+	f.DontShowCheck:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 14, 10);
+	f.DontShowCheck:SetScript("OnClick", function(self)
+		if self:GetChecked() then
+			core.DB.defaults.HideChangeLogs = core.BuildNumber
+		else
+			core.DB.defaults.HideChangeLogs = 0
+		end
+	end)
+
+	local h = 30 + 30 + W.CARD_HDR + 6 + 12 + body + 46   -- title bar, version heading, card header, pads, body, footer
+	f:SetSize(CL_FRAME_WIDTH, math.max(CL_MIN_HEIGHT, math.min(h, CL_MAX_HEIGHT)));  -- resize container
+	f.WhatsNewScroll:UpdateRail()
+	return f
+end
+
+function CommDKP:ToggleChangeLog()          -- AD-19: never writes HideChangeLogs (BR-12.7.3)
+	local cl = CommDKP.ChangeLogDisplay
+	if not cl then CommDKP:CreateChangeLog(); return end
+	if cl:IsShown() then cl:Hide() else cl:Show(); CommDKP:FocusChangeLog(true) end
 end

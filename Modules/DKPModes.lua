@@ -2,6 +2,7 @@ local _, core = ...;
 local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
+local W = CommDKP.Widgets
 
 function CommDKP:ToggleDKPModesWindow()
 	if core.IsOfficer == true then
@@ -21,13 +22,34 @@ function CommDKP:ToggleDKPModesWindow()
 	end
 end
 
+-- UX §11.3.3: shows pane i and checks only its tab. Clicking the active tab is a no-op (single pane, no collapse).
+function CommDKP:DKPModes_SelectTab(i)
+	local f = core.ModesWindow or _G["CommDKP_DKPModesFrame"]
+	if not f or not f.Tabs then return end
+	if f.selectedTab == i and f.Tabs[i].content:IsShown() then return end
+	CommDKP:ShowTabPane(f, i)
+	if f.HeaderText and f.Tabs[i].cdkpTitle then f.HeaderText:SetText(f.Tabs[i].cdkpTitle) end   -- §12.2.2 page header
+end
+
+-- AD-35.6 (BR-27.7): re-reads core.DB into an ALREADY BUILT DKP Modes window, shown or hidden (a hidden window is not
+-- rebuilt on open, and its Roll boxes are written back to core.DB by OnHide/Broadcast). Never creates it (AC-27.12);
+-- never changes the selected tab.
+function CommDKP:RefreshModesWindow()
+	local f = core.ModesWindow
+	if not f then return false end
+	if f.DKPModesMain and f.DKPModesMain.RefreshFromDB then f.DKPModesMain.RefreshFromDB() end
+	if f.DKPModesMisc and f.DKPModesMisc.RefreshFromDB then f.DKPModesMisc.RefreshFromDB() end
+	return true
+end
+
 function CommDKP:DKPModesFrame_Create()
 
 	local f;
 
-	-- UX §9.1: native Blizzard window (NineSlice border, metallic title bar, CloseButton, InsetBg).
-	-- No custom backdrop / close box / watermark: the template owns all chrome.
-	f = CreateFrame("Frame", "CommDKP_DKPModesFrame", UIParent, "BasicFrameTemplateWithInset");
+	-- UX §12.4.4 / AD-16.4: "window" chrome (PortraitFrameTemplate, NoPortrait NineSlice, no Inset well) on the
+	-- shared chrome path, plaque fallback. Interior: page header + scroll region on f.Content (BR-9.4.4); Q9 short title.
+	f = CommDKP.Widgets.CreateChromeFrame("CommDKP_DKPModesFrame", UIParent, "window", L["DKPMODES"], { titleInset = 16 })
+	CommDKP.Widgets.LayoutContent(f)            -- f.Content (= f.ContentInset)
 
 	local ActiveMode = core.DB.modes.mode;
 	local ActiveCostType = core.DB.modes.costvalue;
@@ -38,7 +60,7 @@ function CommDKP:DKPModesFrame_Create()
 	end
 
 	f:SetClampedToScreen(true)
-	f:SetClampRectInsets(0, 0, 0, -22)          -- tabs hang 20 px below the frame + 2 px slack (§9.2.4)
+	f:SetClampRectInsets(0, 42, 0, 0)           -- UX §11.3.3: side-tab column on the right; no bottom tabs any more
 	f:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 300, -120);
 	f:SetSize(490, 636);
 	f:SetToplevel(true)
@@ -55,33 +77,32 @@ function CommDKP:DKPModesFrame_Create()
 	end)
 	tinsert(UISpecialFrames, f:GetName()); -- Sets frame to close on "Escape" (registered once)
 
-	-- Title (same defensive accessor as the Change Log, §7.4)
-	local titleText = f.TitleText or (f.TitleContainer and f.TitleContainer.TitleText)
-	if not titleText then
-		titleText = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-		titleText:SetPoint("CENTER", f.TitleBg or f, f.TitleBg and "CENTER" or "TOP", 0, f.TitleBg and 0 or -12)
-	end
-	titleText:SetText("CommunityDKP Forever \226\128\148 DKP Modes")   -- UTF-8 em dash; native gold title
-	f.TitleLabel = titleText
+	-- §12.4.4 pane area (466 wide): a template-free scroll region from below the 34 px page header to 34 px above the
+	-- content bottom (the BroadcastSettings footer). Its 6 px rail sits in the pane's right lane (x 460..466).
+	local inset = f.Content
+	f.ScrollFrame = W.CreateScrollRegion(inset, { step = 40 })
+	f.ScrollFrame:SetPoint("TOPLEFT",     inset, "TOPLEFT",     0, -42);
+	f.ScrollFrame:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", 0, 34);
+	f.ScrollFrame.ScrollBar:ClearAllPoints()
+	f.ScrollFrame.ScrollBar:SetPoint("TOPRIGHT", f.ScrollFrame, "TOPRIGHT", 0, 0)
+	f.ScrollFrame.ScrollBar:SetPoint("BOTTOMRIGHT", f.ScrollFrame, "BOTTOMRIGHT", 0, 0)
+	f.ScrollFrame.ScrollBar:SetFrameLevel(f.ScrollFrame:GetFrameLevel() + 20)   -- above the cards in the pane
 
-	-- TabMenu ScrollFrame and ScrollBar (inside the template's InsetBg, §9.1.2)
-	local inset = f.InsetBg or f.Inset or f
-	local fallback = (inset == f)
-	f.ScrollFrame = CreateFrame("ScrollFrame", nil, f);
+	-- §12.2.2 page header (34 px): the active pane title (Modes / Options). f.HeaderText is the alias DKPModes_SelectTab writes.
+	f.Header = W.CreatePageHeader(inset, "Modes")
+	f.Header:SetPoint("TOPLEFT", inset, "TOPLEFT", 0, 0)
+	f.Header:SetPoint("TOPRIGHT", inset, "TOPRIGHT", 0, 0)
+	f.Header:SetHeight(W.PAGE_HDR + 6)
+	f.HeaderText = f.Header.Title
 
-	f.ScrollFrame:ClearAllPoints();
-	f.ScrollFrame:SetPoint("TOPLEFT",     inset, "TOPLEFT",     fallback and 6  or 2, fallback and -28 or -4);
-	f.ScrollFrame:SetPoint("BOTTOMRIGHT", inset, "BOTTOMRIGHT", fallback and -8 or -2, fallback and 8   or 4);
-	f.ScrollFrame:SetClipsChildren(false);
-	f.ScrollFrame:SetScript("OnMouseWheel", ScrollFrame_OnMouseWheel);
-
-	f.ScrollFrame.ScrollBar = CreateFrame("Slider", nil, f.ScrollFrame, "UIPanelScrollBarTrimTemplate")
-	f.ScrollFrame.ScrollBar:ClearAllPoints();
-	f.ScrollFrame.ScrollBar:SetPoint("TOPLEFT", f.ScrollFrame, "TOPRIGHT", -20, -12);
-	f.ScrollFrame.ScrollBar:SetPoint("BOTTOMRIGHT", f.ScrollFrame, "BOTTOMRIGHT", -2, 15);
-
-	f.useRetailTabs = true   -- UX §9.1.3 / §9.2: only ModesWindow gets Accountant-Classic bottom tabs
-	f.DKPModesMain, f.DKPModesMisc = CommDKP:SetTabs(f, 2, 475, 600, "Modes", "Misc");
+	-- UX §11.3.3: 2 right-edge icon side-tabs (supersede the §9 bottom tabs). No collapse toggle here.
+	f.sideTabIcons = {
+		{ "Interface\\Icons\\INV_Misc_Coin_02" },                                       -- Modes
+		{ "Interface\\Icons\\INV_Gizmo_02", "Interface\\Icons\\Trade_Engineering" },  -- Options
+	}
+	f.onSideTabClick = function(i) CommDKP:DKPModes_SelectTab(i) end
+	f.DKPModesMain, f.DKPModesMisc = CommDKP:SetTabs(f, 2, 466, 533, "Modes", L["OPTIONS"]);
+	f:HookScript("OnShow", function() CommDKP:DKPModes_SelectTab(1) end)   -- Modes selected on every open
 	f:Hide()
 
 	f:SetScript("OnHide", function()

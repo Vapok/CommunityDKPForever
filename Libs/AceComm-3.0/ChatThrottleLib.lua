@@ -396,13 +396,14 @@ function ChatThrottleLib:Despool(Prio)
 		local msg = pipe[1]
 		local didSend=false
 		local lowerDest = strlower(msg[3] or "")
+		local result	-- CommunityDKPForever (CDKP-022 / AD-30.1.6): stays nil on the "left the group" drop branches
 		if lowerDest == "raid" and not UnitInRaid("player") then
 			-- do nothing
 		elseif lowerDest == "party" and not UnitInParty("player") then
 			-- do nothing
 		else
 			bMyTraffic = true
-			local result = msg.f(unpack(msg, 1, msg.n))
+			result = msg.f(unpack(msg, 1, msg.n))	-- CommunityDKPForever (CDKP-022 / AD-30.1.6)
 			bMyTraffic = false
 			if IsRetryResult(result) then
 				-- Throttle or lockdown: keep the message at the head of its pipe and back off ~1s.
@@ -428,7 +429,7 @@ function ChatThrottleLib:Despool(Prio)
 		end
 		-- notify caller of delivery (even if we didn't send it)
 		if msg.callbackFn then
-			msg.callbackFn (msg.callbackArg, didSend)
+			msg.callbackFn (msg.callbackArg, didSend, result)	-- CommunityDKPForever (CDKP-022 / AD-30.1.6): forward raw send result
 		end
 		-- USER CALLBACK MAY ERROR
 		if didSend then
@@ -606,7 +607,7 @@ function ChatThrottleLib:SendAddonMessage(prio, prefix, text, chattype, target, 
 				self.Prio[prio].nTotalSent = self.Prio[prio].nTotalSent + nSize
 			end
 			if callbackFn then
-				callbackFn (callbackArg, ok)
+				callbackFn (callbackArg, ok, result)	-- CommunityDKPForever (CDKP-022 / AD-30.1.6): forward raw send result
 			end
 			-- USER CALLBACK MAY ERROR
 			return

@@ -45,6 +45,7 @@ function CommDKP:AutoAward(phase, amount, reason) -- phase identifies who to awa
 					tempList2 = tempList2..CommDKP:GetTable(CommDKP_Standby, true)[i].player..",";
 				end
 			end
+			local standbyBefore = #CommDKP:GetTable(CommDKP_Standby, true)   -- AD-36.7 (BR-28.21b)
 			local i = 1
 			while i <= #CommDKP:GetTable(CommDKP_Standby, true) do
 				if CommDKP:GetTable(CommDKP_Standby, true)[i] and strfind(","..raidParty, ","..CommDKP:GetTable(CommDKP_Standby, true)[i].player..",", 1, true) then
@@ -52,6 +53,9 @@ function CommDKP:AutoAward(phase, amount, reason) -- phase identifies who to awa
 				else
 					i=i+1
 				end
+			end
+			if #CommDKP:GetTable(CommDKP_Standby, true) < standbyBefore then   -- pruned: same snapshot as TableFunctions.lua
+				CommDKP.Sync:SendData("CommDKPStand", CommDKP:GetTable(CommDKP_Standby, true))
 			end
 		end
 

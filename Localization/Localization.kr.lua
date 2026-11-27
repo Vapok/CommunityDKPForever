@@ -3,55 +3,27 @@ if GetLocale() == "koKR" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "루시프론", "마그마다르", "게헨나스",
-      "가르", "남작 게돈", "샤즈라", "설퍼론 사자", 
-      "초열의 골레마그", "청지기 이그젝큐투스", "라그나로스",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "폭군 서슬송곳니", "타락한 밸라스트라즈", "용기대장 래쉬레이어",
-      "화염아귀", "에본로크", "플레임고르", "크로마구스", 
-      "네파리안",
-    },
-    AQ = {
-      "예언자 스케람", "전투감시병 살투라", "불굴의 판크리스",
-      "공주 후후란", "쌍둥이 제왕", "크툰", 
-      "Bug Family", "비시두스", "아우로",
-    },
-    NAXX = {
-      "아눕레칸", "귀부인 펠리나", "맥스나",
-      "역병술사 노스", "부정의 헤이건", "로데브", 
-      "훈련교관 라주비어스", "영혼 착취자 고딕", "4인의 기사단",
-      "패치워크", "그라불루스", "글루스", "타디우스",
-      "사피론", "켈투자드",
-    },
-    ZG = {
-      "혈군주 만도키르", "가즈란카", "영혼약탈자 학카르", "대사제 데칼", "대사제 베녹시스", "대여사제 알로크",
-      "대여사제 제클릭", "주술사 진도", "대여사제 말리", "광란의 경계",
-    },
-    AQ20 = {
-      "사냥꾼 아야미스", "먹보 부루", "장군 라작스", "쿠린낙스", "모암", "무적의 오시리안",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"오닉시아"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "발나자르", "베아트릭스", "야수조련사", "솔리스트라자", "석공", "부활의 의회", "릴리안 보스", "칼도란",
-    },
     WORLD = {
       "아주어고스", "군주 카자크", "에메리스", "레손", "이손드레", "타에라",
       "왕자 썬더란",  -- 3079 (AD-12.2)
     },
   }
-  
+
   core.ZoneList = {
-    "녹은 코어", 
-    "검은 날개 둥지", 
-    "안퀴라즈 사원", 
-    "낙스라마스", 
-    "줄구룹", 
-    "안퀴라즈 폐허", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "오닉스 시아의 은신처", 
     "월드 보스",
-    "붉은십자군 초소",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -409,6 +381,7 @@ if GetLocale() == "koKR" then
     LOOTHISTUPDATEPROG = "전리품 기록 업데이트 진행 중",
     MAINGUISIZE = "메인 GUI 크기",
     MANAGE = "꾸리다",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "핵심 침입자 목록 관리",
     MANAGEDKP = "DKP 목록 관리",
     MANAGELISTS = "목록 관리",
@@ -489,6 +462,7 @@ if GetLocale() == "koKR" then
     NORANKSELECTED = "순위가 선택되지 않았습니다.",
     NOROLEDETECTED = "역할이 감지되지 않음",
     NOSPECREPORTED = "보고 된 사양 없음",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "장교가 아닙니다. 길드 설정에서 \"관리자 메모 편집\"권한이있는 순위 만 추가 할 수 있습니다.",
     NOTETOOLONG = "길드 지도자 공개 메모가 너무 깁니다. DKP 테이블 타임 스탬프에 맞게 잘린 노트. (최대 31 자)",
     NOTIFICATIONSLIKETHIS = "이와 같은 알림은 이제",
@@ -685,6 +659,7 @@ if GetLocale() == "koKR" then
     TABLEQUERYSENT = "길드 DKP 테이블 상태 쿼리",
     TABLEQUERYUTD = "최신 정보",
     TABLESAREEMPTY = "테이블이 현재 비어 있습니다.",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "테이블 뷰",
     TAKINGBIDSON = "입찰하기",
     TANK = "탱크",

@@ -1,58 +1,29 @@
 if GetLocale() == "esES" or GetLocale() == "esMX" then
   local _, core = ...;
   local CommDKP = core.CommDKP;
-  local MX = GetLocale() == "esMX"   -- AD-12.2: esMX-specific Scarlet Enclave names
   
   core.BossList = {
-    MC = {
-      "Lucifron", "Magmadar", "Gehennas",
-      "Garr", "Barón Geddon", "Shazzrah", "Presagista Sulfuron", 
-      "Golemagg el Incinerador", "Mayordomo Executus", "Ragnaros",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "Sangrevaja el Indomable", "Vaelastrasz el Corrupto", "Señor de linaje Capazote",
-      "Faucefogo", "Ebonorroca", "Flamagor", "Chromaggus", 
-      "Nefarian",
-    },
-    AQ = {
-      "El profeta Skeram", "Guardia de batalla Sartura", "Fankriss el Implacable",
-      "Princesa Huhuran", "Los Emperadores Gemelos", "C'Thun", 
-      "Realeza silítida", "Viscidus", "Ouro",
-    },
-    NAXX = {
-      "Anub'Rekhan", "Gran Viuda Faerlina", "Maexxna",
-      "Noth el Pesteador", "Heigan el Impuro", "Loatheb", 
-      "Instructor Razuvious", "Gothik el Cosechador", "Los Cuatro Jinetes",
-      "Remendejo", "Grobbulus", "Gluth", "Thaddius",
-      "Sapphiron", "Kel'Thuzad",
-    },
-    ZG = {
-      "Señor sangriento Mandokir", "Gahz'ranka", "Hakkar", "Sumo sacerdote Thekal", "Sumo sacerdote Venoxis", "Suma sacerdotisa Arlokk",
-      "Suma sacerdotisa Jeklik", "Jin'do el Aojador", "Suma sacerdotisa Mar'li", "Blandón de la Locura",
-    },
-    AQ20 = {
-      "Ayamiss el Cazador", "Buru el Manducador", "General Rajaxx", "Kurinnaxx", "Moam", "Osirio el Sinmarcas",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"Onyxia"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "Balnazzar", "Beatrix", "Maestro de bestias", "Solistrasza", MX and "Mampostero" or "Mason", "Consejo renacido", MX and "Lillian Voss" or "Lilian Voss", "Caldoran",
-    },
     WORLD = {
       "Azuregos", "Lord Kazzak", "Emeriss", "Lethon", "Ysondre", "Taerar",
       "Príncipe Thunderaan",  -- 3079 (AD-12.2)
     },
   }
-  
+
   core.ZoneList = {
-    "Nucleo fundido", 
-    "Guarida de alas negras", 
-    "Templo de Ahn'Qiraj", 
-    "Naxxramas", 
-    "Zul'Gurub", 
-    "Ruinas de Ahn'Qiraj", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "Guarida de Onyxia", 
     "Jefes del mundo",
-    "Enclave Escarlata",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -410,6 +381,7 @@ if GetLocale() == "esES" or GetLocale() == "esMX" then
     LOOTHISTUPDATEPROG = "Actualización del historial de botines en progreso",
     MAINGUISIZE = "Tamaño de la GUI principal",
     MANAGE = "Gestionar",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "Administrar la lista Core Raider",
     MANAGEDKP = "Administrar listados de DKP",
     MANAGELISTS = "Administrar listas",
@@ -490,6 +462,7 @@ if GetLocale() == "esES" or GetLocale() == "esMX" then
     NORANKSELECTED = "No hay rango seleccionado.",
     NOROLEDETECTED = "No se detectó ningún rol",
     NOSPECREPORTED = "Ninguna especificación reportada",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "No es un oficial. Solo puedes agregar rangos que tengan permisos \"Editar nota de oficial\" en la configuración del gremio.",
     NOTETOOLONG = "La nota pública de Guild Leaders fue demasiado larga. Nota truncada para ajustarse a la marca de tiempo de la tabla DKP. (31 caracteres como máximo)",
     NOTIFICATIONSLIKETHIS = "Notificaciones como esta son ahora",
@@ -686,6 +659,7 @@ if GetLocale() == "esES" or GetLocale() == "esMX" then
     TABLEQUERYSENT = "DKP-Tabellenstatus der Gilde abfragen",
     TABLEQUERYUTD = "Auf dem Laufenden",
     TABLESAREEMPTY = "Sus mesas están actualmente vacías.",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "Vistas de tabla",
     TAKINGBIDSON = "Tomando ofertas",
     TANK = "Tanque",

@@ -2,38 +2,33 @@ local _, core = ...;
 local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
+local W = CommDKP.Widgets
 
- 
+
 local function CreateRow(parent, id) -- Create 3 buttons for each row in the list
 
 	local f;
 
 	f = CreateFrame("Button", "$parentLine"..id, parent, "BackdropTemplate")
-	
+
 	f.PriceInfo = {}
 	f:SetSize(core.TableWidth, core.TableRowHeight)
-	f:SetHighlightTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\ListBox-Highlight");
-	f:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-	f:GetNormalTexture():SetAlpha(0.2)
+	W.StyleRow(f, id)                      -- §12.2.10: stripe on odd rows + bg3 hover (replaces ListBox-Highlight / talent-blue-glow)
 	--f:SetScript("OnClick", DKPTable_OnClick)
 	for i=1, 3 do
-		f.PriceInfo[i] = f:CreateFontString(nil, "OVERLAY");
-		f.PriceInfo[i]:SetFontObject("CommDKPSmallOutlineLeft")
-		f.PriceInfo[i]:SetTextColor(1, 1, 1, 1);
+		f.PriceInfo[i] = W.CreateText(f, "body", nil, "LEFT");
 		if (i==1) then
-			f.PriceInfo[i].rowCounter = f:CreateFontString(nil, "OVERLAY");
-			f.PriceInfo[i].rowCounter:SetFontObject("CommDKPSmallOutlineLeft")
-			f.PriceInfo[i].rowCounter:SetTextColor(1, 1, 1, 0.3);
-			f.PriceInfo[i].rowCounter:SetPoint("LEFT", f, "LEFT", 3, -1);
+			f.PriceInfo[i].rowCounter = W.CreateText(f, "caption", nil, "LEFT", "textMuted");
+			f.PriceInfo[i].rowCounter:SetPoint("LEFT", f, "LEFT", 3, 0);
 			f.PriceInfo[i]:SetSize((370)-1, core.TableRowHeight);
-			
+			if f.PriceInfo[i].SetWordWrap then f.PriceInfo[i]:SetWordWrap(false) end
 		end
 		if (i==2) then
-			f.PriceInfo[i]:SetFontObject("CommDKPSmallLeft")
+			f.PriceInfo[i]:SetJustifyH("CENTER")
 			f.PriceInfo[i]:SetSize((60)-1, core.TableRowHeight);
 		end
 		if (i==3) then
-			f.PriceInfo[i]:SetFontObject("CommDKPSmallLeft")
+			f.PriceInfo[i]:SetJustifyH("CENTER")
 			f.PriceInfo[i]:SetSize((70)-1, core.TableRowHeight);
 		end
 	end
@@ -50,97 +45,141 @@ local function CreateRow(parent, id) -- Create 3 buttons for each row in the lis
 	return f
 end
 
+-- AD-25.2.2 (CDKP-016b): the one Pricing-list sort. Column/direction from core.PriceSort (nil = login default A->Z);
+-- never reads core.currentSort (Roster-owned, F1). Total order (F7): primary key -> item A->Z (nil last) -> itemID.
+function CommDKP:SortPriceTable()
+	if type(core.PriceTable) ~= "table" then core.PriceTable = {} end
+	local s = core.PriceSort
+	local id, ascend = "item", true
+	if type(s) == "table" and (s.id == "item" or s.id == "minbid" or s.id == "disenchants") then
+		id, ascend = s.id, (s.ascend and true or false)
+	end
+	table.sort(core.PriceTable, function(a, b)
+		if id ~= "item" then
+			local va, vb = tonumber(a[id]) or 0, tonumber(b[id]) or 0
+			if va ~= vb then
+				if ascend then return va > vb else return va < vb end	-- legacy PriceListSort direction
+			end
+		end
+		local na = type(a.item) == "string" and a.item or nil
+		local nb = type(b.item) == "string" and b.item or nil
+		if na ~= nb then
+			if na == nil then return false end		-- nil item last (init.lua:872-882), both directions
+			if nb == nil then return true end
+			if id == "item" and not ascend then return na > nb end
+			return na < nb
+		end
+		return tostring(a.itemID or "") < tostring(b.itemID or "")
+	end)
+end
+
+-- AD-25.2.4 (BR-16.11): redraw core.PriceTable at the FauxScrollFrame's current row offset, clamped to the new length,
+-- and leave template bar + AD-16.2 rail on the same value (no jump on the next wheel). No-op until PriceTab_Create ran.
+function CommDKP:PriceTable_Redraw(resetScroll)
+	local pt = CommDKP.ConfigTab7 and CommDKP.ConfigTab7.PriceTable
+	if not (pt and pt.Rows and pt.Rows[1]) then return end
+	local h = core.TableRowHeight
+	local rows = 0
+	if not resetScroll then
+		if FauxScrollFrame_GetOffset then rows = tonumber(FauxScrollFrame_GetOffset(pt)) or 0
+		else rows = tonumber(pt.offset) or 0 end
+	end
+	local maxRows = #core.PriceTable - (core.PriceNumRows or 0)
+	if maxRows < 0 then maxRows = 0 end
+	rows = math.floor(rows)
+	if rows > maxRows then rows = maxRows end
+	if rows < 0 then rows = 0 end
+	pt.offset = rows								-- the field FauxScrollFrame_GetOffset / OnVerticalScroll use
+	CommDKP:PriceTable_Update(rows * h)				-- ends with FauxScrollFrame_Update -> new min/max -> rail sync
+	local sb = pt.ScrollBar
+	if sb and sb.GetValue and sb.SetValue and (sb:GetValue() or 0) ~= rows * h then
+		sb:SetValue(rows * h)						-- in game: OnValueChanged -> OnVerticalScroll -> same rows (idempotent)
+	end
+	if pt.cdkpRailSync then pt.cdkpRailSync() end	-- F10 backstop
+end
+
+-- AD-25.2.3 (CDKP-016b, BR-16.9): rebuild core.PriceTable from the current team's MinBids, re-apply the
+-- Pricing sort (no toggle), and redraw at the preserved (clamped) offset. Safe before the tab exists (BR-16.12).
+-- resetScroll = true -> draw from the top (team switch, tab creation).
+function CommDKP:RefreshPriceTable(resetScroll)
+	core.PriceTable = CommDKP:FormatPriceTable()
+	CommDKP:SortPriceTable()
+	CommDKP:PriceTable_Redraw(resetScroll)
+end
+
 function CommDKP:ProcessDisenchant(loot)
-	local itemName,itemLink,_,_,_,_,_,_,_,itemIcon = C_Item.GetItemInfo(loot)
-	local _, _, Color, Ltype, itemID, Enchant, Gem1, Gem2, Gem3, Gem4, Suffix, Unique, LinkLvl, Name = string.find(loot,"|?c?f?f?(%x*)|?H?([^:]*):?(%d+):?(%d*):?(%d*):?(%d*):?(%d*):?(%d*):?(%-?%d*):?(%-?%d*):?(%d*):?(%d*):?(%-?%d*)|?h?%[?([^%[%]]*)%]?|?h?|?r?")
-
-	if itemName == nil and Name ~= nil then
-		itemName = Name;
+	-- AD-23.2.1: lockdown guard first; a refused call changes nothing and leaves the window open (matches Award).
+	if CommDKP.IsMessagingRestricted and CommDKP:IsMessagingRestricted() then
+		CommDKP:Print(L["BIDDINGLOCKED"])
+		return
 	end
-	-- CDKP-004: uncached items return nil from C_Item.GetItemInfo; fall back to the link we were
-	-- given and to the icon lookup, which does not need the item cache.
+
+	-- AD-23.2.1 / AD-23.2.2: resolve through the shared parser (AD-12.3 / C-23.1); no local link regex.
+	local itemName, itemLink, itemIcon, _, itemKey = CommDKP:ParseItemLink(loot)
+	if not itemKey then return end
 	itemLink = itemLink or loot
-	if itemIcon == nil and tonumber(itemID) then
-		itemIcon = C_Item.GetItemIconByID(tonumber(itemID))
+	itemName = itemName or itemLink
+
+	-- AD-23.2.3: can only process through the bidding process
+	if not (core.BiddingWindow and core.BiddingWindow:IsShown()) then return end
+	local mode = core.DB.modes.mode
+	local staticStyle = mode == "Static Item Values" or mode == "Roll Based Bidding"
+		or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Static")
+
+	CommDKP:ResetBidToggle()	-- CDKP-006 (AD-5.3): resets Bidding.lua's own toggle; never rebinds OnClick
+	core.BidInProgress = false
+	CommDKP:BroadcastStopBidTimer()
+
+	local minBids  = CommDKP:GetTable(CommDKP_MinBids, true)	-- read once; current team
+	local existing = minBids[itemKey]
+	local cost     = CommDKP_round(core.BiddingWindow.cost:GetNumber(), core.DB.modes.rounding)
+	local updatedDisenchants = ((existing and tonumber(existing.disenchants)) or 0) + 1
+
+	-- AD-23.2.4: D7 rule (computed values, then per-mode writes)
+	local minbid, lastbid
+	if staticStyle then
+		minbid = cost	-- used ONLY for a new entry (legacy: pre-cut cost)
+		CommDKP:SendChat("No bids for ".." "..itemLink.." for "..cost.." "..L["DKP"].." and will be disenchanted. This will be disenchant number "..updatedDisenchants, "RAID_WARNING")
+		lastbid = cost
+		if core.DB.defaults.DecreaseDisenchantValue then
+			if cost == 0 then updatedDisenchants = 0 end	-- legacy reset
+			--TODO: Make this less hardcodeded
+			if updatedDisenchants >= 3 then
+				lastbid = CommDKP_round(cost/2, core.DB.modes.rounding)
+				if lastbid < 5 then lastbid = 5 end
+			end
+		end
+	else
+		minbid = CommDKP_round(core.BiddingWindow.minBid:GetNumber(), core.DB.modes.rounding)
+		CommDKP:SendChat("No bids for ".." "..itemLink.." and will be disenchanted. This will be disenchant number "..updatedDisenchants, "RAID_WARNING")
 	end
 
-	local mode = core.DB.modes.mode;
-
-	if core.BiddingWindow and core.BiddingWindow:IsShown() then  -- can only process through bidding process
-		CommDKP:ResetBidToggle()	-- CDKP-006 (AD-5.3): resets Bidding.lua's own toggle; never rebinds OnClick
-
-		core.BidInProgress = false;
-		CommDKP:BroadcastStopBidTimer()
-
-		
-		local search = CommDKP:GetTable(CommDKP_MinBids, true)[itemID];
-		local cost = CommDKP_round(core.BiddingWindow.cost:GetNumber(), core.DB.modes.rounding);
-		local minBid = cost;
-		local newItem = {item=itemName, minbid=minBid, link=itemLink, icon=itemIcon, disenchants=0, lastbid=0, itemID=itemID};
-		if search then
-			newItem = CommDKP:GetTable(CommDKP_MinBids, true)[itemID];
-		end
-		local numOfDisenchants = newItem["disenchants"] or 0;
-		local updatedDisenchants = numOfDisenchants + 1;
-		
-		--Figure out adjusted cost or minValue
-		if mode == "Static Item Values" or mode == "Roll Based Bidding" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Static") then
-			
-			CommDKP:SendChat("No bids for ".." "..itemLink.." for "..cost.." "..L["DKP"].." and will be disenchanted. This will be disenchant number "..updatedDisenchants, "RAID_WARNING");
-			
-			if core.DB.defaults.DecreaseDisenchantValue then
-				--If cost is 0, reset disenchants.
-				if cost == 0 then
-					updatedDisenchants = 0;
-				end
-
-				--TODO: Make this less hardcodeded
-				--Adjust Price
-				if updatedDisenchants >= 3 then
-					cost = CommDKP_round(cost/2, core.DB.modes.rounding);
-					if cost < 5 then
-						cost = 5
-					end
-				end
-			end
-
-			newItem.lastbid = cost;
-			newItem.disenchants = updatedDisenchants;
-
-		else
-			minBid = CommDKP_round(core.BiddingWindow.minBid:GetNumber(), core.DB.modes.rounding);
-			newItem.minbid = minBid;
-			CommDKP:SendChat("No bids for ".." "..itemLink.." and will be disenchanted. This will be disenchant number "..updatedDisenchants, "RAID_WARNING");
-		end
-
-		newItem.disenchants = updatedDisenchants;
-
-		if not search then
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID] = newItem;
-			core.BiddingWindow.CustomMinBid:SetShown(true);
-			core.BiddingWindow.CustomMinBid:SetChecked(core.DB.defaults.CustomMinBid);
-		else
-			if mode == "Static Item Values" or mode == "Roll Based Bidding" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Static") then
-				CommDKP:GetTable(CommDKP_MinBids, true)[itemID].minbid = newItem.minbid;
-				CommDKP:GetTable(CommDKP_MinBids, true)[itemID].lastbid = newItem.lastbid;
-			end
-
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID].link = newItem.link;
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID].icon = newItem.icon;
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID].item = newItem.itemName;
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID].itemID = newItem.itemID;
-			CommDKP:GetTable(CommDKP_MinBids, true)[itemID].disenchants = newItem.disenchants;
-			newItem = CommDKP:GetTable(CommDKP_MinBids, true)[itemID];
-		end
-		
-		CommDKP.Sync:SendData("CommDKPSetPrice", newItem);
-		core.BiddingWindow:Hide()
-
-		CommDKP:ClearBidWindow()
+	if existing == nil then
+		minBids[itemKey] = { item = itemName, minbid = minbid, link = itemLink, icon = itemIcon,
+			disenchants = updatedDisenchants, lastbid = lastbid or 0, itemID = itemKey }
+		core.BiddingWindow.CustomMinBid:SetShown(true)	-- legacy, new-entry only, all modes
+		core.BiddingWindow.CustomMinBid:SetChecked(core.DB.defaults.CustomMinBid)
+	else
+		if staticStyle then existing.lastbid = lastbid else existing.minbid = minbid end
+		existing.disenchants = updatedDisenchants
+		existing.item   = existing.item   or itemName	-- D4 fix: never nil
+		existing.link   = existing.link   or itemLink
+		existing.icon   = existing.icon   or itemIcon
+		existing.itemID = existing.itemID or itemKey
 	end
+	local entry = minBids[itemKey]
+
+	-- AD-23.2.5: immediate local refresh (must precede Hide/ClearBidWindow), then broadcast
+	CommDKP:RefreshPriceTable()	-- AD-25 (S3)
+	CommDKP.Sync:SendData("CommDKPSetPrice", entry)
+	core.BiddingWindow:Hide()
+	CommDKP:ClearBidWindow()
 end
 
 function CommDKP:PriceTable_Update(scrollOffset)
+	local pt = CommDKP.ConfigTab7 and CommDKP.ConfigTab7.PriceTable		-- AD-25.2.6 (BR-16.12 / E5)
+	if not (pt and pt.Rows and pt.Rows[1]) or type(core.PriceTable) ~= "table" then return end
+	scrollOffset = tonumber(scrollOffset) or 0
 
 	local numOptions = #core.PriceTable
 	local numOfRows = core.PriceNumRows;
@@ -223,50 +262,23 @@ function CommDKP:PriceTable_Update(scrollOffset)
 
 end
 
-function CommDKP:PriceListSort(id, reset)
-	local button;                                 -- passing "reset" forces it to do initial sort (A to Z repeatedly instead of A to Z then Z to A toggled)
+function CommDKP:PriceListSort(id, reset)        -- passing a non-"Clear" reset keeps the direction (legacy)
+	if not (id == "item" or id == "minbid" or id == "disenchants") then return end	-- AD-25 F1: never a Roster id
 	local PriceSortButtons = core.PriceSortButtons
+	local button = PriceSortButtons and PriceSortButtons[id]
+	if not button then return end
 
-	button = PriceSortButtons[id]
-
-	if reset and reset ~= "Clear" then                         -- reset is useful for check boxes when you don't want it repeatedly reversing the sort
+	if reset and reset ~= "Clear" then
 		button.Ascend = button.Ascend
 	else
 		button.Ascend = not button.Ascend
 	end
 	for k, v in pairs(PriceSortButtons) do
-		if v ~= button then
-			v.Ascend = nil
-		end
+		if v ~= button then v.Ascend = nil end
 	end
-	table.sort(core.PriceTable, function(a, b)
-
-		if id == "disenchants" then
-			if a[button.Id] == nil then
-				a[button.Id] = 0;
-			end
-			if b[button.Id] == nil then
-				b[button.Id] = 0;
-			end
-		end
-
-		if button.Ascend then
-			if id == "item" then
-				return a[button.Id] < b[button.Id]
-			else
-				return a[button.Id] > b[button.Id]
-			end
-		else
-			if id == "item" then
-				return a[button.Id] > b[button.Id]
-			else
-				return a[button.Id] < b[button.Id]
-			end
-		end
-	end)
-	core.currentSort = id;
-	CommDKP:PriceTable_Update(0)
-
+	core.PriceSort = { id = id, ascend = button.Ascend and true or false }	-- AD-25.2.1; NO core.currentSort write (C-25.2)
+	CommDKP:SortPriceTable()
+	CommDKP:PriceTable_Redraw(true)			-- C-25.4: top of list, bar/rail follow
 end
 
 function CommDKP:PriceTab_Create()
@@ -274,26 +286,22 @@ function CommDKP:PriceTab_Create()
 	local numOfRows = core.PriceNumRows;
 	local PriceSortButtons = core.PriceSortButtons
 
-	CommDKP.ConfigTab7.header = CommDKP.ConfigTab7:CreateFontString(nil, "OVERLAY");
-	CommDKP.ConfigTab7.header:ClearAllPoints();
-	CommDKP.ConfigTab7.header:SetPoint("TOPLEFT", CommDKP.ConfigTab7, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab7.header:SetFontObject("CommDKPLargeCenter");
-	CommDKP.ConfigTab7.header:SetText(L["PRICETITLE"]);
-	CommDKP.ConfigTab7.header:SetScale(1.2);
+	-- UX §12.3.7: one Loot Prices card (0,0) 548 x 482. Its title replaces the deleted large heading (Q7).
+	local card = W.CreateCard(CommDKP.ConfigTab7, L["PRICETITLE"], 548, 482)
+	card:SetPoint("TOPLEFT", CommDKP.ConfigTab7, "TOPLEFT", 0, 0)
+	CommDKP.ConfigTab7.PriceCard = card
+	local body = card.Body
 
-	CommDKP.ConfigTab7.description = CommDKP.ConfigTab7:CreateFontString(nil, "OVERLAY");
-	CommDKP.ConfigTab7.description:ClearAllPoints();
-	CommDKP.ConfigTab7.description:SetPoint("TOPLEFT", CommDKP.ConfigTab7.header, "BOTTOMLEFT", 7, -10);
-	CommDKP.ConfigTab7.description:SetWidth(400);
-	CommDKP.ConfigTab7.description:SetFontObject("CommDKPNormalLeft");
-	CommDKP.ConfigTab7.description:SetText(L["PRICEDESC"]);
+	CommDKP.ConfigTab7.description = W.CreateCaption(body, L["PRICEDESC"], 2);
+	CommDKP.ConfigTab7.description:SetPoint("TOPLEFT", body, "TOPLEFT", W.PAD, -8);
+	CommDKP.ConfigTab7.description:SetWidth(548 - 6 - 2 * W.PAD);
 
-	CommDKP.ConfigTab7.PriceTable = CreateFrame("ScrollFrame", "CommDKPPriceScrollFrame", CommDKP.ConfigTab7, "FauxScrollFrameTemplate, BackdropTemplate")
+	-- Faux table: 22 rows x 18 = 396 px under a 20 px column strip; rail at the table's right (AD-16.2 (f)).
+	CommDKP.ConfigTab7.PriceTable = CreateFrame("ScrollFrame", "CommDKPPriceScrollFrame", body, "FauxScrollFrameTemplate")
 		CommDKP.ConfigTab7.PriceTable:SetSize(core.TableWidth, core.TableRowHeight*numOfRows)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab7.PriceTable, "TableBorder", "TableBg", "TableBorder")	-- CDKP-005 (AD-4): border restored
-	CommDKP.ConfigTab7.PriceTable:SetPoint("TOPLEFT", 0, -95)
+	CommDKP.ConfigTab7.PriceTable:SetPoint("TOPLEFT", body, "TOPLEFT", W.PAD, -56)
 
-	
+
 	CommDKP.ConfigTab7.PriceTable:SetClipsChildren(false);
 
 	CommDKP.ConfigTab7.PriceTable.ScrollBar = FauxScrollFrame_GetChildFrames(CommDKP.ConfigTab7.PriceTable)
@@ -302,8 +310,8 @@ function CommDKP:PriceTab_Create()
 	for i=1, numOfRows do
 		CommDKP.ConfigTab7.PriceTable.Rows[i] = CreateRow(CommDKP.ConfigTab7.PriceTable, i)
 		if i==1 then
-			CommDKP.ConfigTab7.PriceTable.Rows[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab7.PriceTable, "TOPLEFT", 0, -2)
-		else  
+			CommDKP.ConfigTab7.PriceTable.Rows[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab7.PriceTable, "TOPLEFT", 0, 0)
+		else
 			CommDKP.ConfigTab7.PriceTable.Rows[i]:SetPoint("TOPLEFT", CommDKP.ConfigTab7.PriceTable.Rows[i-1], "BOTTOMLEFT")
 		end
 	end
@@ -311,25 +319,25 @@ function CommDKP:PriceTab_Create()
 	CommDKP.ConfigTab7.PriceTable:SetScript("OnVerticalScroll", function(self, offset)
 		FauxScrollFrame_OnVerticalScroll(self, offset, core.TableRowHeight, CommDKP:PriceTable_Update(offset))
 	end)
+	W.AttachFauxRail(CommDKP.ConfigTab7.PriceTable, body)
 
-	CommDKP.ConfigTab7.PriceTable.Headers = CreateFrame("Frame", "CommDKPPriceTableHeaders", CommDKP.ConfigTab7, "BackdropTemplate")
-	
-	CommDKP.ConfigTab7.PriceTable.Headers:SetSize(500, 22)
-	CommDKP.ConfigTab7.PriceTable.Headers:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab7.PriceTable, "TOPLEFT", 0, 1)
-	CommDKP:ApplyBackdrop(CommDKP.ConfigTab7.PriceTable.Headers, "TableBorder", "HeaderBg", "TableBorder")
+	-- §12.2.10 column strip (20 px, popup/table variant): sort buttons keep their click handlers.
+	CommDKP.ConfigTab7.PriceTable.Headers = W.CreateColumnStrip(body, 20, "CommDKPPriceTableHeaders")
+
+	CommDKP.ConfigTab7.PriceTable.Headers:SetSize(core.TableWidth, 20)
+	CommDKP.ConfigTab7.PriceTable.Headers:SetPoint("BOTTOMLEFT", CommDKP.ConfigTab7.PriceTable, "TOPLEFT", 0, 0)
 	CommDKP.ConfigTab7.PriceTable.Headers:Show()
 
 	PriceSortButtons.item = CreateFrame("Button", "$ParentPriceSortButtonItem", CommDKP.ConfigTab7.PriceTable.Headers)
 	PriceSortButtons.disenchants = CreateFrame("Button", "$ParentPriceSortButtonDisenchants", CommDKP.ConfigTab7.PriceTable.Headers)
 	PriceSortButtons.minbid = CreateFrame("Button", "$ParentPriceSortButtonDkp", CommDKP.ConfigTab7.PriceTable.Headers)
 
-	PriceSortButtons.minbid:SetPoint("BOTTOM", CommDKP.ConfigTab7.PriceTable.Headers, "BOTTOM", 130, 2)
+	PriceSortButtons.minbid:SetPoint("BOTTOM", CommDKP.ConfigTab7.PriceTable.Headers, "BOTTOM", 130, 1)
 	PriceSortButtons.item:SetPoint("RIGHT", PriceSortButtons.minbid, "LEFT", 0, 0)
 	PriceSortButtons.disenchants:SetPoint("LEFT", PriceSortButtons.minbid, "RIGHT")
 
 	for k, v in pairs(PriceSortButtons) do
 		v.Id = k
-		v:SetHighlightTexture("Interface\\BUTTONS\\BlueGrad64_faded.blp");
 		if k == "minbid" then
 			v:SetSize((60), core.TableRowHeight)
 		elseif k == "item" then
@@ -340,24 +348,16 @@ function CommDKP:PriceTab_Create()
 		v:SetScript("OnClick", function(self) CommDKP:PriceListSort(self.Id, "Clear") end)
 	end
 
-	PriceSortButtons.item.t = PriceSortButtons.item:CreateFontString(nil, "OVERLAY")
-	PriceSortButtons.item.t:SetFontObject("CommDKPNormal")
-	PriceSortButtons.item.t:SetTextColor(1, 1, 1, 1);
+	-- §12.2.10: gold GameFontNormalSmall column labels.
+	PriceSortButtons.item.t = W.CreateText(PriceSortButtons.item, "label", "Item Name", "LEFT")
 	PriceSortButtons.item.t:SetPoint("LEFT", PriceSortButtons.item, "LEFT", 50, 0);
-	PriceSortButtons.item.t:SetText("Item Name");
 
- 	PriceSortButtons.disenchants.t = PriceSortButtons.disenchants:CreateFontString(nil, "OVERLAY")
-	PriceSortButtons.disenchants.t:SetFontObject("CommDKPNormal");
-	PriceSortButtons.disenchants.t:SetTextColor(1, 1, 1, 1);
+ 	PriceSortButtons.disenchants.t = W.CreateText(PriceSortButtons.disenchants, "label", "Disenchants", "CENTER")
 	PriceSortButtons.disenchants.t:SetPoint("CENTER", PriceSortButtons.disenchants, "CENTER", 0, 0);
-	PriceSortButtons.disenchants.t:SetText("Disenchants");
-	
-	PriceSortButtons.minbid.t = PriceSortButtons.minbid:CreateFontString(nil, "OVERLAY")
-	PriceSortButtons.minbid.t:SetFontObject("CommDKPNormal")
-	PriceSortButtons.minbid.t:SetTextColor(1, 1, 1, 1);
+
+	PriceSortButtons.minbid.t = W.CreateText(PriceSortButtons.minbid, "label", "DKP", "CENTER")
 	PriceSortButtons.minbid.t:SetPoint("CENTER", PriceSortButtons.minbid, "CENTER", 0, 0);
-	PriceSortButtons.minbid.t:SetText("DKP");
 	core.PriceSortButtons = PriceSortButtons;
 
-	CommDKP:PriceTable_Update(0)
+	CommDKP:RefreshPriceTable(true)	-- AD-25 (S9)
 end

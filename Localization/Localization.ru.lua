@@ -3,55 +3,27 @@ if GetLocale() == "ruRU" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "Люцифрон", "Магмадар", "Гееннас",
-      "Гарр", "Барон Геддон", "Шаззрах", "Предвестник Сульфурон", 
-      "Големагг Испепелитель", "Мажордом Экзекутус", "Рагнарос",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "Бритвосмерт Неукротимый", "Валестраз Порочный", "Предводитель драконов Разящий Бич",
-      "Огнечрев", "Черноскал", "Пламегор", "Хромаггус", 
-      "Нефариан",
-    },
-    AQ = {
-      "Пророк Скерам", "Боевой страж Сартура", "Фанкрисс Непреклонный",
-      "Принцесса Хухуран", "Императоры-близнецы", "К'Тун", 
-      "Семейство жуков", "Нечистотон", "Оуро",
-    },
-    NAXX = {
-      "Ануб'Рекан", "Великая вдова Фарлина", "Мексна",
-      "Нот Чумной", "Хейган Нечестивый", "Лотхиб", 
-      "Инструктор Разувий", "Готик Жнец", "Четыре Всадника",
-      "Лоскутик", "Гроббулус", "Глут", "Таддиус",
-      "Сапфирон", "Кел'Тузад",
-    },
-    ZG = {
-      "Мандокир Повелитель Крови", "Газ'ранка", "Хаккар", "Верховный жрец Текал", "Верховный жрец Веноксис", "Верховная жрица Арлокк",
-      "Верховная жрица Джеклик", "Мастер проклятий Джин'до", "Верховная жрица Мар'ли", "Край безумия",
-    },
-    AQ20 = {
-      "Аямисса Охотница", "Буру Ненасытный", "Генерал Раджакс", "Куриннакс", "Moam", "Оссириан Неуязвимый",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"Ониксия"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "Балназзар", "Беатриса", "Повелитель зверей", "Солистраза", "Мейсон", "Возрожденный совет", "Лилиан Восс", "Калдоран",
-    },
     WORLD = {
       "Азурегос", "Лорд Каззак", "Эмерисс", "Летон", "Исондра", "Таэрар",
       "Принц Громораан",  -- 3079 (AD-12.2)
     },
   }
-  
+
   core.ZoneList = {
-    "Огненные Недра", 
-    "Логово Крыла Тьмы", 
-    "Храм Ан'Киража", 
-    "Наксарамас", 
-    "Зул'Гуруб", 
-    "Руины Ан'Киража", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "Логово Ониксии", 
     "Мировые Боссы",
-    "Анклав Алого ордена",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -418,6 +390,7 @@ if GetLocale() == "ruRU" then
     LOOTHISTUPDATEPROG = "Выполняется обновление истории лута",
     MAINGUISIZE = "Размер окна",
     MANAGE = "Управление",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "Управление списком основных рейдеров",
     MANAGEDKP = "Управление списками DKP",
     MANAGELISTS = "Управление списками",
@@ -502,6 +475,7 @@ if GetLocale() == "ruRU" then
     NORANKSELECTED = "Вы не выбрали ранг для добавления.",
     NOROLEDETECTED = "Роль не обнаружена",
     NOSPECREPORTED = "Спек не указан",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "не является офицером. Вы можете добавлять только звания с правами «Редактировать заметку офицера» в настройках гильдии.",
     NOTETOOLONG = "Заметка Лидера Гильдии слишком длинная. Уменьшите заметку чтобы соответствовать требованиям DKP. (Максимум 31 символ)",
     NOTIFICATIONSLIKETHIS = "Подобные уведомления теперь",
@@ -701,6 +675,7 @@ if GetLocale() == "ruRU" then
     TABLEQUERYSENT = "Запрос статуса таблиц DKP гильдии",
     TABLEQUERYUTD = "актуальны",
     TABLESAREEMPTY = "Ваши таблицы в данный момент пусты.",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "Списки",
     TAKINGBIDSON = "Принимаются ставки на",
     TANK = "Танк",

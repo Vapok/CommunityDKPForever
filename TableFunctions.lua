@@ -2,10 +2,25 @@ local _, core = ...;
 local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
-local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");   -- the roster right-click menuFrame stays on LibDD (Q4)
+local W = CommDKP.Widgets
 
 local SelectedRow = 0;        -- sets the row that is being clicked
+
+-- UX §12.2.10: stripe / hover come from W.StyleRow; selection is W.SetRowSelected (bg3 fill + 1 px trim edge).
+-- The row keeps a transparent normal texture because DKPTable_Update still raises its alpha for the player's own
+-- row (GetNormalTexture():SetAlpha(0.8)); that faint bronze "self" band is unchanged.
+local ROW_FILL = "Interface\\Buttons\\WHITE8X8"
+local function PaintRow(row, selected)
+	local P = core.Palette or core.Palettes.Forever
+	row:SetNormalTexture(ROW_FILL)
+	local t = row:GetNormalTexture()
+	t:SetVertexColor(P.line[1], P.line[2], P.line[3])
+	t:SetAlpha(0)
+	W.SetRowSelected(row, selected)
+end
 local menuFrame = LibDD:Create_UIDropDownMenu("CommDKPDKPTableMenuFrame", UIParent)
+CommDKP.Widgets.RegisterContextMenu(menuFrame)   -- CDKP-019 (AD-27.2.3)
 local ConvToRaidEvent = CreateFrame("Frame", "CommDKPConvToRaidEventsFrame");
 local InvCount;
 local LastSelection = 0;
@@ -105,18 +120,33 @@ local function Invite_OnEvent(self, event, arg1, ...)
 	end
 end
 
-local function DisplayUserHistory(self, player)
+-- AD-24.2 (CDKP-017, BR-17.1): the ONE Roster / officer-Bidding "Recent History" tooltip. On normal data it is call-for-call
+-- the former file-local DisplayUserHistory (BR-17.3); the AD-24 guards only change cases that used to throw (BR-17.4/17.6).
+function CommDKP:ShowPlayerHistoryTooltip(owner, player)
+	if not owner or type(player) ~= "string" or player == "" then return end          -- AD-24 G1 (BR-17.6)
+	if issecretvalue and issecretvalue(player) then return end                         -- AD-24 G1 (BR-17.8)
+
 	local PlayerTable = {}
 	local c, PlayerSearch, PlayerSearch2, LifetimeSearch, RowCount, curDate;
-	local lookUpLimit = core.DB.defaults.TooltipHistoryCount or 20;
+	local maxCount = (core.DB and core.DB.defaults and tonumber(core.DB.defaults.TooltipHistoryCount)) or 15  -- AD-24 G2
+	if maxCount < 1 then maxCount = 15 end                                             -- AD-24 G2
+	local lookUpLimit = maxCount;                                                      -- AD-24 G2
 
 	PlayerSearch = CommDKP:TableStrFind(CommDKP:GetTable(CommDKP_DKPHistory, true), player, "players", lookUpLimit)
 	PlayerSearch2 = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_Loot, true), player, "player", lookUpLimit)
 	LifetimeSearch = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true), player, "player", lookUpLimit)
 
-	c = CommDKP:GetCColors(CommDKP:GetTable(CommDKP_DKPTable, true)[LifetimeSearch[1][1]].class)
+	-- AD-24 G3 (BR-17.4, T4): no profile -> grey header (same 0.67 grey as the Bidding row; hex is required by the |c below)
+	local dkpTable = CommDKP:GetTable(CommDKP_DKPTable, true)
+	local profileEntry = (LifetimeSearch and LifetimeSearch[1] and LifetimeSearch[1][1]) and dkpTable[LifetimeSearch[1][1]] or nil
+	local GREY = { r = 0.67, g = 0.67, b = 0.67, hex = "ffababab" }
+	if profileEntry and profileEntry.class then
+		c = CommDKP:GetCColors(profileEntry.class) or GREY
+	else
+		c = GREY
+	end
 
-	GameTooltip:SetOwner(self, "ANCHOR_RIGHT", 0, 0);
+	GameTooltip:SetOwner(owner, "ANCHOR_RIGHT", 0, 0);
 	GameTooltip:SetText(L["RECENTHISTORYFOR"].." |c"..c.hex..player.."|r\n", 0.25, 0.75, 0.90, 1, true);
 
 	if PlayerSearch then
@@ -153,8 +183,8 @@ local function DisplayUserHistory(self, player)
 	end)
 
 	if #PlayerTable > 0 then
-		if #PlayerTable > core.DB.defaults.TooltipHistoryCount then
-			RowCount = core.DB.defaults.TooltipHistoryCount
+		if #PlayerTable > maxCount then                                                  -- AD-24 G2
+			RowCount = maxCount                                                            -- AD-24 G2
 		else
 			RowCount = #PlayerTable;
 		end
@@ -176,12 +206,14 @@ local function DisplayUserHistory(self, player)
 					GameTooltip:AddDoubleLine("  "..PlayerTable[i].reason, "|cff00ff00"..CommDKP_round(PlayerTable[i].dkp, core.DB.modes.rounding).." DKP|r", 0, 1.0, 0);
 				end
 			elseif PlayerTable[i].cost then
-				GameTooltip:AddDoubleLine("  "..PlayerTable[i].zone..": |cffff0000"..PlayerTable[i].boss.."|r", PlayerTable[i].loot.." |cffff0000("..PlayerTable[i].cost.." DKP)|r", 1.0, 1.0, 1.0);
+				GameTooltip:AddDoubleLine("  "..(PlayerTable[i].zone or "")..": |cffff0000"..(PlayerTable[i].boss or "").."|r", PlayerTable[i].loot.." |cffff0000("..PlayerTable[i].cost.." DKP)|r", 1.0, 1.0, 1.0);  -- AD-24 G5
 			end
 		end
-		GameTooltip:AddDoubleLine(" ", " ", 1.0, 1.0, 1.0);
-		GameTooltip:AddLine("  |cff00ff00"..L["LIFETIMEEARNED"]..": "..CommDKP_round(CommDKP:GetTable(CommDKP_DKPTable, true)[LifetimeSearch[1][1]].lifetime_gained, core.DB.modes.rounding).."|r", 1.0, 1.0, 1.0, true);
-		GameTooltip:AddLine("  |cffff0000"..L["LIFETIMESPENT"]..": "..CommDKP_round(CommDKP:GetTable(CommDKP_DKPTable, true)[LifetimeSearch[1][1]].lifetime_spent, core.DB.modes.rounding).."|r", 1.0, 1.0, 1.0, true);
+		if profileEntry then                                                             -- AD-24 G4 (BR-17.4)
+			GameTooltip:AddDoubleLine(" ", " ", 1.0, 1.0, 1.0);
+			GameTooltip:AddLine("  |cff00ff00"..L["LIFETIMEEARNED"]..": "..CommDKP_round(profileEntry.lifetime_gained, core.DB.modes.rounding).."|r", 1.0, 1.0, 1.0, true);
+			GameTooltip:AddLine("  |cffff0000"..L["LIFETIMESPENT"]..": "..CommDKP_round(profileEntry.lifetime_spent, core.DB.modes.rounding).."|r", 1.0, 1.0, 1.0, true);
+		end
 	else
 		GameTooltip:AddLine("No DKP Entries", 1.0, 1.0, 1.0, true);
 	end
@@ -398,6 +430,7 @@ local function RightClickMenu(self)
 						CommDKP:ViewLimited(true)
 						core.CurSubView = "raid"
 						CommDKP.ConfigTab1.checkBtn[11]:SetChecked(true);
+						CommDKP.ConfigTab1.checkBtn[13]:SetChecked(false);   -- AD-28.2.3 (D-28.3, BR-20.2)
 						LibDD:ToggleDropDownMenu(nil, nil, menuFrame)
 					end },
 					{ text = L["VIEWSTANDBY"], notCheckable = true, func = function()
@@ -536,7 +569,7 @@ local function RightClickMenu(self)
 		end
 	end }
 
-	menu[7].menuList[#core.classes+2] = { text = L["ONLYPARTYRAID"], isNotRadio = true, keepShownOnClick = false, disabled = not IsInRaid(), checked = CommDKP.ConfigTab1.checkBtn[11]:GetChecked(), func = function()
+	menu[7].menuList[#core.classes+2] = { text = L["ONLYPARTYRAID"], isNotRadio = true, keepShownOnClick = false, disabled = not (IsInRaid() or IsInGroup()), checked = CommDKP.ConfigTab1.checkBtn[11]:GetChecked(), func = function()
 		CommDKP.ConfigTab1.checkBtn[11]:SetChecked(not CommDKP.ConfigTab1.checkBtn[11]:GetChecked())
 		CommDKP.ConfigTab1.checkBtn[13]:SetChecked(false)
 		menu[7].menuList[#core.classes+4].checked = false
@@ -554,7 +587,7 @@ local function RightClickMenu(self)
 		CommDKPFilterChecks(CommDKP.ConfigTab1.checkBtn[12])
 	end }
 
-	menu[7].menuList[#core.classes+4] = { text = L["NOTINRAIDFILTER"], isNotRadio = true, keepShownOnClick = false, disabled = not IsInRaid(), checked = CommDKP.ConfigTab1.checkBtn[13]:GetChecked(), func = function()
+	menu[7].menuList[#core.classes+4] = { text = L["NOTINRAIDFILTER"], isNotRadio = true, keepShownOnClick = false, disabled = not (IsInRaid() or IsInGroup()), checked = CommDKP.ConfigTab1.checkBtn[13]:GetChecked(), func = function()
 		CommDKP.ConfigTab1.checkBtn[13]:SetChecked(not CommDKP.ConfigTab1.checkBtn[13]:GetChecked())
 		CommDKP.ConfigTab1.checkBtn[11]:SetChecked(false)
 		menu[7].menuList[#core.classes+2].checked = false
@@ -653,34 +686,22 @@ local function CreateRow(parent, id) -- Create 3 buttons for each row in the lis
 		local f = CreateFrame("Button", "$parentLine"..id, parent)
 		f.DKPInfo = {}
 		f:SetSize(core.TableWidth, core.TableRowHeight)
-		f:SetHighlightTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\ListBox-Highlight");
-		f:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-		f:GetNormalTexture():SetAlpha(0.2)
+		W.StyleRow(f, id)                 -- §12.2.10 stripe (odd rows) + bg3 hover; replaces the old highlight texture
+		PaintRow(f, false)
 		f:SetScript("OnClick", DKPTable_OnClick)
 		for i=1, 3 do
-			f.DKPInfo[i] = f:CreateFontString(nil, "OVERLAY");
-			f.DKPInfo[i]:SetFontObject("CommDKPSmallOutlineLeft")
-			f.DKPInfo[i]:SetTextColor(1, 1, 1, 1);
+			f.DKPInfo[i] = W.CreateText(f, "body", nil, "LEFT");      -- §12.2.10 cells: GameFontHighlight (class / DKP colors unchanged, Q8)
 			if (i==1) then
-				f.DKPInfo[i].rowCounter = f:CreateFontString(nil, "OVERLAY");
-				f.DKPInfo[i].rowCounter:SetFontObject("CommDKPSmallOutlineLeft")
-				f.DKPInfo[i].rowCounter:SetTextColor(1, 1, 1, 0.3);
-				f.DKPInfo[i].rowCounter:SetPoint("LEFT", f, "LEFT", 3, -1);
+				f.DKPInfo[i].rowCounter = W.CreateText(f, "caption", nil, "LEFT", "textMuted");
+				f.DKPInfo[i].rowCounter:SetPoint("LEFT", f, "LEFT", 3, 0);
 			end
 			if (i==3) then
-				f.DKPInfo[i]:SetFontObject("CommDKPSmallLeft")
-				f.DKPInfo[i].adjusted = f:CreateFontString(nil, "OVERLAY");
-				f.DKPInfo[i].adjusted:SetFontObject("CommDKPSmallOutlineLeft")
-				f.DKPInfo[i].adjusted:SetScale("0.8")
-				f.DKPInfo[i].adjusted:SetTextColor(1, 1, 1, 0.6);
-				f.DKPInfo[i].adjusted:SetPoint("LEFT", f.DKPInfo[3], "RIGHT", 3, -1);
+				f.DKPInfo[i].adjusted = W.CreateText(f, "caption", nil, "LEFT", "textMuted");
+				f.DKPInfo[i].adjusted:SetPoint("LEFT", f.DKPInfo[3], "RIGHT", 3, 0);
 
 				if core.DB.modes.mode == "Roll Based Bidding" then
-					f.DKPInfo[i].rollrange = f:CreateFontString(nil, "OVERLAY");
-					f.DKPInfo[i].rollrange:SetFontObject("CommDKPSmallOutlineLeft")
-					f.DKPInfo[i].rollrange:SetScale("0.8")
-					f.DKPInfo[i].rollrange:SetTextColor(1, 1, 1, 0.6);
-					f.DKPInfo[i].rollrange:SetPoint("CENTER", 115, -1);
+					f.DKPInfo[i].rollrange = W.CreateText(f, "caption", nil, "CENTER", "textMuted");
+					f.DKPInfo[i].rollrange:SetPoint("CENTER", 115, 0);
 				end
 
 				f.DKPInfo[i].adjustedArrow = f:CreateTexture(nil, "OVERLAY", nil, -8);
@@ -796,7 +817,7 @@ function CommDKP:DKPTable_Update()
 					CommDKP:GetTable(CommDKP_DKPTable, true)[SetRole[1][1]].role = L["NOROLEDETECTED"]
 				end
 			elseif core.CenterSort == "version" then
-				row.DKPInfo[2]:SetText(core.WorkingTable[index].version);
+				row.DKPInfo[2]:SetText(core.WorkingTable[index].version or "Unknown");	-- AD-26.4.5: display only, no write-back
 			end
 			
 			row.DKPInfo[3]:SetText(CommDKP_round(core.WorkingTable[index].dkp, core.DB.modes.rounding))
@@ -845,11 +866,9 @@ function CommDKP:DKPTable_Update()
 
 			local a = CommDKP:Table_Search(core.SelectedData, core.WorkingTable[index].player);  -- searches selectedData for the player name indexed.
 			if not a then
-				CommDKP.DKPTable.Rows[i]:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-				CommDKP.DKPTable.Rows[i]:GetNormalTexture():SetAlpha(0.2)
+				PaintRow(CommDKP.DKPTable.Rows[i], false)
 			else
-				CommDKP.DKPTable.Rows[i]:SetNormalTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\ListBox-Highlight")
-				CommDKP.DKPTable.Rows[i]:GetNormalTexture():SetAlpha(0.7)
+				PaintRow(CommDKP.DKPTable.Rows[i], true)
 			end
 			if CommDKP:IsSelf(core.WorkingTable[index].player) then
 				row.DKPInfo[2]:SetText("|cff00ff00"..row.DKPInfo[2]:GetText().."|r")
@@ -857,7 +876,7 @@ function CommDKP:DKPTable_Update()
 				CommDKP.DKPTable.Rows[i]:GetNormalTexture():SetAlpha(0.8)
 			end
 			CommDKP.DKPTable.Rows[i]:SetScript("OnEnter", function(self)
-				DisplayUserHistory(self, CurPlayer)
+				CommDKP:ShowPlayerHistoryTooltip(self, CurPlayer)       -- AD-24.2.5 (BR-17.1): shared helper
 			end)
 			CommDKP.DKPTable.Rows[i]:SetScript("OnLeave", function()
 				GameTooltip:Hide()
@@ -894,16 +913,18 @@ function CommDKP:DKPTable_Update()
 	end
 
 	CommDKP.DKPTable.counter.t:SetText(#core.WorkingTable.." "..L["ENTRIESSHOWN"]);    -- updates "Entries Shown" at bottom of DKPTable
-	CommDKP.DKPTable.counter.t:SetFontObject("CommDKPSmallLeft")
 
 	FauxScrollFrame_Update(CommDKP.DKPTable, numOptions, core.TableNumRows, core.TableRowHeight, nil, nil, nil, nil, nil, nil, true) -- alwaysShowScrollBar= true to stop frame from hiding
 end
 
 function CommDKP:DKPTable_Create()
-	CommDKP.DKPTable = CreateFrame("ScrollFrame", "CommDKPDisplayScrollFrame", CommDKP.UIConfig, "FauxScrollFrameTemplate, BackdropTemplate")
+	-- UX §12.3.1: the table lives in the Roster Card body, under the 24 px column strip. 23 rows x 18 = 414 (+3)
+	-- between the strip and the 34 px footer (B12: only core.TableNumRows sets the count). The card provides the frame.
+	local rosterCard = CommDKP.UIConfig.RosterCard
+	local host = (rosterCard and rosterCard.Body) or CommDKP.UIConfig
+	CommDKP.DKPTable = CreateFrame("ScrollFrame", "CommDKPDisplayScrollFrame", host, "FauxScrollFrameTemplate, BackdropTemplate")
 	CommDKP.DKPTable:SetSize(core.TableWidth, core.TableRowHeight*core.TableNumRows+3)
-	CommDKP:ApplyBackdrop(CommDKP.DKPTable, "TableBorder", "TableBg", "TableBorder")	-- CDKP-005 (AD-4): border restored
-	CommDKP.DKPTable:SetPoint("LEFT", 20, 3)
+	CommDKP.DKPTable:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -24)
 
 	
 	CommDKP.DKPTable:SetClipsChildren(false);
@@ -921,10 +942,17 @@ function CommDKP:DKPTable_Create()
 	CommDKP.DKPTable:SetScript("OnVerticalScroll", function(self, offset)
 		FauxScrollFrame_OnVerticalScroll(self, offset, core.TableRowHeight, CommDKP.DKPTable_Update)
 	end)
-	
-	CommDKP.DKPTable.SeedVerify = CreateFrame("Frame", nil, CommDKP.DKPTable);
-	CommDKP.DKPTable.SeedVerify:SetPoint("TOPLEFT", CommDKP.DKPTable, "BOTTOMLEFT", 0, -15);
-	CommDKP.DKPTable.SeedVerify:SetSize(18, 18);
+	W.AttachFauxRail(CommDKP.DKPTable, host)          -- §12.2.8: 6 px rail at the table's right, inside the card
+
+	-- §12.2.11 sync pip: SeedVerify (16 x 16, same OnEnter/OnLeave/OnMouseDown) on the Roster Card footer, LEFT (10, 0).
+	local footer = (rosterCard and rosterCard.Footer) or CommDKP.DKPTable
+	CommDKP.DKPTable.SeedVerify = CreateFrame("Frame", nil, footer);
+	if rosterCard then
+		CommDKP.DKPTable.SeedVerify:SetPoint("LEFT", footer, "LEFT", 10, 0);
+	else
+		CommDKP.DKPTable.SeedVerify:SetPoint("TOPLEFT", CommDKP.DKPTable, "BOTTOMLEFT", 0, -15);
+	end
+	CommDKP.DKPTable.SeedVerify:SetSize(16, 16);
 	CommDKP.DKPTable.SeedVerify:SetScript("OnLeave", function(self)
 		GameTooltip:Hide()
 	end)
@@ -935,9 +963,7 @@ function CommDKP:DKPTable_Create()
 		end
 	end)
 
-	CommDKP.DKPTable.SeedVerifyIcon = CommDKP.DKPTable:CreateTexture(nil, "OVERLAY", nil)             -- seed verify (bottom left) indicator
-	CommDKP.DKPTable.SeedVerifyIcon:SetPoint("TOPLEFT", CommDKP.DKPTable.SeedVerify, "TOPLEFT", 0, 0);
-	CommDKP.DKPTable.SeedVerifyIcon:SetColorTexture(0, 0, 0, 1)
-	CommDKP.DKPTable.SeedVerifyIcon:SetSize(18, 18);
-	CommDKP.DKPTable.SeedVerifyIcon:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\out-of-date")
+	CommDKP.DKPTable.SeedVerifyIcon = CommDKP.DKPTable.SeedVerify:CreateTexture(nil, "ARTWORK", nil)   -- seed verify (footer left) pip fill
+	W.StyleStatusPip(CommDKP.DKPTable.SeedVerify, CommDKP.DKPTable.SeedVerifyIcon)
+	W.SetPipState(CommDKP.DKPTable.SeedVerifyIcon, true)   -- same initial state as the old out-of-date texture
 end

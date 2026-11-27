@@ -2,39 +2,16 @@ local _, core = ...;
 local CommDKP = core.CommDKP;
 
 core.BossList = {
-  MC = {
-    "Lucifron", "Magmadar", "Gehennas",
-    "Garr", "Baron Geddon", "Shazzrah", "Sulfuron Harbinger", 
-    "Golemagg the Incinerator", "Majordomo Executus", "Ragnaros"
+  BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+    "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+    "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
   },
-  BWL = {
-    "Razorgore the Untamed", "Vaelastrasz the Corrupt", "Broodlord Lashlayer",
-    "Firemaw", "Ebonroc", "Flamegor", "Chromaggus", 
-    "Nefarian"
-  },
-  AQ = {
-    "The Prophet Skeram", "Battleguard Sartura", "Fankriss the Unyielding",
-    "Princess Huhuran", "Twin Emperors", "C'Thun", 
-    "Bug Family", "Viscidus", "Ouro"
-  },
-  NAXX = {
-    "Anub'Rekhan", "Grand Widow Faerlina", "Maexxna",
-    "Noth the Plaguebringer", "Heigan the Unclean", "Loatheb", 
-    "Instructor Razuvious", "Gothik the Harvester", "The Four Horsemen",
-    "Patchwerk", "Grobbulus", "Gluth", "Thaddius",
-    "Sapphiron", "Kel'Thuzad"
-  },
-  ZG = {
-    "Bloodlord Mandokir", "Gahz'ranka", "Hakkar", "High Priest Thekal", "High Priest Venoxis", "High Priestess Arlokk",
-    "High Priestess Jeklik", "Jin'do the Hexxer", "High Priestess Mar'li", "Edge of Madness"
-  },
-  AQ20 = {
-    "Ayamiss the Hunter", "Buru the Gorger", "General Rajaxx", "Kurinnaxx", "Moam", "Ossirian the Unscarred"
+  HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+    "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+    "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+    "Council of Thorns", "Nythus the Dreambound", "The Wild King",
   },
   ONYXIA = {"Onyxia"},
-  SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-    "Balnazzar", "Beatrix", "Beastmaster", "Solistrasza", "Mason", "Reborn Council", "Lillian Voss", "Caldoran",
-  },
   WORLD = {
     "Azuregos", "Lord Kazzak", "Emeriss", "Lethon", "Ysondre", "Taerar",
     "Prince Thunderaan",  -- 3079 (AD-12.2)
@@ -42,15 +19,10 @@ core.BossList = {
 }
 
 core.ZoneList = {
-  "Molten Core", -- 1
-  "Blackwing Lair", -- 2
-  "Temple of Ahn'Qiraj", -- 3 
-  "Naxxramas",  -- 4
-  "Zul'Gurub", -- 5
-  "Ruins of Ahn'Qiraj",  -- 6
-  "Onyxia's Lair", -- 7
-  "World Bosses", -- 8
-  "Scarlet Enclave",  -- 9 (AD-12.2)
+  "The Barrow Deeps", -- 1
+  "Hyjal Summit",     -- 2
+  "Onyxia's Lair",    -- 3
+  "World Bosses",     -- 4
 }
 
 core.L = {
@@ -357,6 +329,7 @@ core.L = {
   LOOTHISTUPDATEPROG = "Loot history update in progress",
   MAINGUISIZE = "Main GUI Size",
   MANAGE = "Manage",
+  MANAGEDKPROSTER = "Manage DKP Roster",
   MANAGECORELIST = "Manage Core Raider List",
   MANAGEDKP = "Manage DKP Listings",
   MANAGELISTS = "Manage Lists",
@@ -420,6 +393,7 @@ core.L = {
   NORANKSELECTED = "No rank is selected.",
   NOROLEDETECTED = "No Role Detected",
   NOSPECREPORTED = "No Spec Reported",
+  METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
   NOTANOFFICER = "is not an officer. You may only add ranks that have \"Edit Officer Note\" permissions in guild settings.",
   NOTETOOLONG = "Guild Leaders public note was too long. Truncated note to fit DKP Table timestamp. (31 character max)",
   NOTIFICATIONSLIKETHIS = "Notifications like this are now",
@@ -606,12 +580,20 @@ core.L = {
   TEAMNAMEINPUTTOOLTIPDESC = "For changing currently selected team name",
   TEAMRENAMESELECTEDESC = "Allows guild master to rename selected team from the dropdown list",
   TEAMCURRENTLIST = "Currently selected team",
-  TEAMCURRENTLISTLABEL = "Team selector",
+  TEAMCURRENTLISTLABEL = "Team:",   -- UX §13.2 / Q3
+  CHANGELOGBTN = "Change Log",   -- AD-19.2 (012d) (b)
+  COLLAPSEDESC = "Hide the workspace (click any side-tab to reopen)",
+  LOGCOL_DATE = "Date",               -- AD-19.2 (012f1): Loot Log column labels (PLAYER / ITEM reused)
+  LOGCOL_COST = "Cost",
+  LOGCOL_BOSSZONE = "Boss / Zone",
+  LOGCOL_PLAYERS = "Players",         -- AD-19.2 (012f2): DKP Log column labels (DKP / REASON reused)
+  LOGCOL_BY = "By",
+  LOGCOL_NPLAYERS = "%d Players",     -- DKP Log Players cell for multi-recipient entries
+  LOGTIP_PLAYERSBY = "%d player(s), by %s",
   TEAMCURRENTLISTDESC = "This shows the list of all teams within the guild.",
   TEAMCURRENTLISTDESC2 = "All tabs/tables base their data on value coming from this dropdown. Be sure to always check which team you have selected before awarding any DKP or starting the raid timer.",
   TEAMCURRENTLISTDESC3 = "You cannot change the currently selected team from this drop down. To change currently selected team go to /dkp main window",
   TEAMLIST = "List of teams",
-  TEAMCURRENTLISTLABEL = "Team selector",
   TEAMLISTDESC = "List of all the teams defined for current player's realm/guild. Team is a smaller subsection of a guild. Usefull for guilds with more than one raiding groups",
   TEAMMANAGEMENTHEADER = "Guild team management section",
   TEAMSELECT = "Select Team",
@@ -771,6 +753,7 @@ core.L = {
   NOENTRIESRETURNED = "No Profiles Returned",
   ERRANTINPROGRESS = "Errant entry check in progress. Please Wait...",
   TABLESAREEMPTY = "Your tables are currently empty.",
+  TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
   DKPSETTINGS = "DKP Award Parameters",
   ONLINEONLY = "Online Only",
   ONLINEONLYTTDESC = "This will only award raid DKP to players that are online. (For use with auto award, raid timer and zero sum distribution)",
@@ -836,6 +819,33 @@ core.L = {
   SETTINGSHELP = "Opens CommunityDKP Forever in Options -> AddOns.",
   PALETTESET = "Palette set to %s. Type /reload to fully apply.",
   PALETTEUSAGE = "Usage: /dkp palette legacy|forever",
+
+  -- CDKP-009 (UX §12.6, AD-16.1 Q12): UI v2 card titles. enUS only; other locales inherit via Fallback.lua.
+  CARDROSTER = "DKP Roster",
+  CARDMANUALADJ = "Manual Adjustment",
+  CARDCLASSFILTERS = "Class & Raid Filters",
+  CARDCLASSGRAPH = "Class Distribution",
+  CARDGENERAL = "General",
+  CARDACTIONS = "Actions",
+  CARDFILTER = "Filter",
+  CARDLOOTLOG = "Loot Log",
+  CARDDKPLOG = "DKP Log",
+  CARDWHATSNEW = "What's New",
+  CARDCURRENTITEM = "Current Item",
+  CARDYOURBID = "Your Bid",
+  CARDAUCTION = "Auction",
+  CARDMODE = "Mode",
+  CARDCOSTRULES = "Cost Rules",
+  CARDBIDRULES = "Bid Rules",
+  CARDAUTOAWARD = "Auto Award",
+  CARDANNOUNCE = "Bid Announcements",
+  CARDMISC = "Miscellaneous",
+  CARDAWARDELIG = "Award Eligibility",
+  CARDSENDTO = "Send To",
+  CARDFORMAT = "Format",
+  CARDOUTPUT = "Output",
+  CARDAWARD = "Award",
+  CARDDETAILS = "Details",
 }
 
 -- AD-6.5: keep the English table as the fallback for keys other locales don't translate.

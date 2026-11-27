@@ -3,21 +3,33 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
 
-local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (the 8 DKP Modes selectors)
+local W = CommDKP.Widgets
+
+-- UX §12.4.4 Modes pane: 4 cards, 456 wide (the pane's right 10 px lane holds the rail), two field columns of 205
+-- with a 16 px gutter; labels sit above their field. A hidden field leaves its grid cell empty (no reflow).
+local CARD_W, COL1, COL2, FIELD_W = 456, 12, 233, 205
 
 function CommDKP:DKPModes_Main()
   local f = core.ModesWindow;
 
-  f.DKPModesMain.ModeDescriptionHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ModeDescriptionHeader:SetFontObject("CommDKPLargeLeft");
-  f.DKPModesMain.ModeDescriptionHeader:SetWidth(400);
-  f.DKPModesMain.ModeDescriptionHeader:SetPoint("TOPLEFT", f.DKPModesMain, "TOPLEFT", 30, -20);
+  f.DKPModesMain.ModeCard = W.CreateCard(f.DKPModesMain, L["CARDMODE"], CARD_W, 130)
+  f.DKPModesMain.ModeCard:SetPoint("TOPLEFT", f.DKPModesMain, "TOPLEFT", 0, 0)
+  f.DKPModesMain.CostCard = W.CreateCard(f.DKPModesMain, L["CARDCOSTRULES"], CARD_W, 131)
+  f.DKPModesMain.CostCard:SetPoint("TOPLEFT", f.DKPModesMain.ModeCard, "BOTTOMLEFT", 0, -8)
+  f.DKPModesMain.BidCard = W.CreateCard(f.DKPModesMain, L["CARDBIDRULES"], CARD_W, 161)
+  f.DKPModesMain.BidCard:SetPoint("TOPLEFT", f.DKPModesMain.CostCard, "BOTTOMLEFT", 0, -8)
+  local modeBody, costBody, bidBody = f.DKPModesMain.ModeCard.Body, f.DKPModesMain.CostCard.Body, f.DKPModesMain.BidCard.Body
 
-  f.DKPModesMain.ModeDescription = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ModeDescription:SetPoint("TOPLEFT", f.DKPModesMain, "TOPLEFT", 20, -45);
-  f.DKPModesMain.ModeDescription:SetWidth(400);
-  f.DKPModesMain.ModeDescription:SetFontObject("CommDKPSmallLeft")
-  
+  -- §12.4.4: the legacy large heading duplicated the dropdown's text and is removed. The FontString stays (hidden)
+  -- because ModesDropDown:SetValue still writes it.
+  f.DKPModesMain.ModeDescriptionHeader = W.CreateText(modeBody, "heading", nil, "LEFT")
+  f.DKPModesMain.ModeDescriptionHeader:Hide()
+
+  f.DKPModesMain.ModeDescription = W.CreateCaption(modeBody, nil, 4)
+  f.DKPModesMain.ModeDescription:SetPoint("TOPLEFT", modeBody, "TOPLEFT", COL1, -52);
+  f.DKPModesMain.ModeDescription:SetWidth(CARD_W - 6 - 2 * W.PAD);
+
   local MinBidDescription = L["MINBIDDESCRIPTION"]
   local StaticDescription = L["STATICDESCRIPTION"]
   local RollDescription = L["ROLLDESCRIPTION"]
@@ -52,27 +64,26 @@ function CommDKP:DKPModes_Main()
   end
 
 
-  f.DKPModesMain.ModesDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.ModesDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", modeBody);
 
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.ModesDropDown, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.ModesDropDown, function(self, level, menuList)
     
-  local DKPMode = LibDD:UIDropDownMenu_CreateInfo()
+  local DKPMode = DD:UIDropDownMenu_CreateInfo()
     DKPMode.func = self.SetValue
-    DKPMode.fontObject = "CommDKPSmallCenter"
     DKPMode.text, DKPMode.arg1, DKPMode.checked, DKPMode.isNotRadio = L["MINBIDVALUESHEAD"], "Minimum Bid Values", "Minimum Bid Values" == CurMode, false
-    LibDD:UIDropDownMenu_AddButton(DKPMode)
+    DD:UIDropDownMenu_AddButton(DKPMode)
     DKPMode.text, DKPMode.arg1, DKPMode.checked, DKPMode.isNotRadio = L["STATICITEMVALUESHEAD"], "Static Item Values", "Static Item Values" == CurMode, false
-    LibDD:UIDropDownMenu_AddButton(DKPMode)
+    DD:UIDropDownMenu_AddButton(DKPMode)
     DKPMode.text, DKPMode.arg1, DKPMode.checked, DKPMode.isNotRadio = L["ROLLBIDDINGHEAD"], "Roll Based Bidding", "Roll Based Bidding" == CurMode, false
-    LibDD:UIDropDownMenu_AddButton(DKPMode)
+    DD:UIDropDownMenu_AddButton(DKPMode)
     DKPMode.text, DKPMode.arg1, DKPMode.checked, DKPMode.isNotRadio = L["ZEROSUMHEAD"], "Zero Sum", "Zero Sum" == CurMode, false
-    LibDD:UIDropDownMenu_AddButton(DKPMode)
+    DD:UIDropDownMenu_AddButton(DKPMode)
   end)
 
-  f.DKPModesMain.ModesDropDown:SetPoint("TOPLEFT", f.DKPModesMain, "TOPLEFT", 10, -200)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.ModesDropDown, 150)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ModesDropDown, LocalMode)
+  f.DKPModesMain.ModesDropDown:SetPoint("TOPLEFT", modeBody, "TOPLEFT", COL1, -22)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.ModesDropDown, 220)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.ModesDropDown, LocalMode)
 
   -- Dropdown Menu Function
   function f.DKPModesMain.ModesDropDown:SetValue(newValue)
@@ -88,7 +99,7 @@ function CommDKP:DKPModes_Main()
       f.DKPModesMain.MaxBidBehaviorDropDown:Show();
       f.DKPModesMain.MaxBidBehaviorHeader:Show();
       core.DB.modes.costvalue = "Integer";
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
       f.DKPModesMain.SubZeroBidding:Show();
       f.DKPModesMain.SubZeroBidding:SetChecked(core.DB.modes.SubZeroBidding)
       if core.DB.modes.SubZeroBidding == true then
@@ -110,7 +121,7 @@ function CommDKP:DKPModes_Main()
       f.DKPModesMain.MaxBidBehaviorDropDown:Hide();
       f.DKPModesMain.MaxBidBehaviorHeader:Hide();
       core.DB.modes.MaxBehavior = "Max DKP";
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
       f.DKPModesMain.RollContainer:Hide()
       f.DKPModesMain.ZeroSumType:Hide()
       f.DKPModesMain.ZeroSumTypeHeader:Hide();
@@ -126,11 +137,11 @@ function CommDKP:DKPModes_Main()
           f.DKPModesMain.AllowNegativeBidders:Show()
           f.DKPModesMain.AllowNegativeBidders:SetChecked(core.DB.modes.AllowNegativeBidders)
         end
-        LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["INTEGER"])
+        DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["INTEGER"])
       else
         f.DKPModesMain.SubZeroBidding:Hide()
         f.DKPModesMain.AllowNegativeBidders:Hide()
-        LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["PERCENT"])
+        DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["PERCENT"])
       end
     elseif newValue == "Roll Based Bidding" then
       core.DB.modes.mode = "Roll Based Bidding"
@@ -139,7 +150,7 @@ function CommDKP:DKPModes_Main()
       f.DKPModesMain.MaxBidBehaviorDropDown:Hide();
       f.DKPModesMain.MaxBidBehaviorHeader:Hide();
       core.DB.modes.MaxBehavior = "Max DKP";
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
       f.DKPModesMain.ModeDescription:SetText(RollDescription)
       f.DKPModesMain.RollContainer:Show()
       f.DKPModesMain.ZeroSumType:Hide()
@@ -156,7 +167,7 @@ function CommDKP:DKPModes_Main()
           f.DKPModesMain.AllowNegativeBidders:Show()
           f.DKPModesMain.AllowNegativeBidders:SetChecked(core.DB.modes.AllowNegativeBidders)
         end
-        LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
+        DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
       end
     elseif newValue == "Zero Sum" then
       core.DB.modes.mode = "Zero Sum"
@@ -166,7 +177,7 @@ function CommDKP:DKPModes_Main()
       f.DKPModesMain.AllowNegativeBidders:Hide()
       f.DKPModesMain.RollContainer:Hide()
       f.DKPModesMain.ItemCostHeader:Hide();
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, "Integer")
       f.DKPModesMain.ItemCostDropDown:Hide();
       f.DKPModesMain.ZeroSumType:Show()
       f.DKPModesMain.ZeroSumTypeHeader:Show();
@@ -178,7 +189,7 @@ function CommDKP:DKPModes_Main()
         f.DKPModesMain.MaxBidBehaviorDropDown:Hide();
         f.DKPModesMain.MaxBidBehaviorHeader:Hide();
         core.DB.modes.MaxBehavior = "Max DKP";
-        LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
+        DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, "Max DKP")
         f.DKPModesMain.CostSelection:Hide()
         f.DKPModesMain.CostSelectionHeader:Hide()
       else
@@ -190,6 +201,7 @@ function CommDKP:DKPModes_Main()
         f.DKPModesMain.AllowNegativeBidders:Show()
       end
     end
+    if f.DKPModesMain.LayoutModesMain then f.DKPModesMain.LayoutModesMain() end   -- AD-21.2 (BR-14.1.3)
 
     if CurMode == "Minimum Bid Values" then
       LocalMode = L["MINBIDVALUESHEAD"];
@@ -201,8 +213,8 @@ function CommDKP:DKPModes_Main()
       LocalMode = L["ZEROSUMHEAD"]
     end
 
-    LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ModesDropDown, LocalMode)
-    LibDD:CloseDropDownMenus()
+    DD:UIDropDownMenu_SetText(f.DKPModesMain.ModesDropDown, LocalMode)
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.ModesDropDown:SetScript("OnEnter", function(self)
@@ -215,41 +227,38 @@ function CommDKP:DKPModes_Main()
     GameTooltip:Hide()
   end)
 
-  f.DKPModesMain.ModeHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ModeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ModesDropDown, "TOPLEFT", 25, 0);
-  f.DKPModesMain.ModeHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.ModeHeader:SetText(L["DKPMODES"])
+  f.DKPModesMain.ModeHeader = W.CreateText(modeBody, "label", L["DKPMODES"], "LEFT")
+  f.DKPModesMain.ModeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ModesDropDown, "TOPLEFT", 0, 3);
 
   -- Rounding DROPDOWN box 
-  f.DKPModesMain.RoundDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.RoundDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", costBody);
 
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.RoundDropDown, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.RoundDropDown, function(self, level, menuList)
     
-  local places = LibDD:UIDropDownMenu_CreateInfo()
+  local places = DD:UIDropDownMenu_CreateInfo()
     places.func = self.SetValue
-    places.fontObject = "CommDKPSmallCenter"
     places.text, places.arg1, places.checked, places.isNotRadio = 0, 0, 0 == core.DB.modes.rounding, false
-    LibDD:UIDropDownMenu_AddButton(places)
+    DD:UIDropDownMenu_AddButton(places)
     places.text, places.arg1, places.checked, places.isNotRadio = 1, 1, 1 == core.DB.modes.rounding, false
-    LibDD:UIDropDownMenu_AddButton(places)
+    DD:UIDropDownMenu_AddButton(places)
     places.text, places.arg1, places.checked, places.isNotRadio = 2, 2, 2 == core.DB.modes.rounding, false
-    LibDD:UIDropDownMenu_AddButton(places)
+    DD:UIDropDownMenu_AddButton(places)
     places.text, places.arg1, places.checked, places.isNotRadio = 3, 3, 3 == core.DB.modes.rounding, false
-    LibDD:UIDropDownMenu_AddButton(places)
+    DD:UIDropDownMenu_AddButton(places)
     places.text, places.arg1, places.checked, places.isNotRadio = 4, 4, 4 == core.DB.modes.rounding, false
-    LibDD:UIDropDownMenu_AddButton(places)
+    DD:UIDropDownMenu_AddButton(places)
   end)
 
-  f.DKPModesMain.RoundDropDown:SetPoint("TOPLEFT", f.DKPModesMain.ModesDropDown, "BOTTOMLEFT", 0, -95)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.RoundDropDown, 80)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.RoundDropDown, core.DB.modes.rounding)
+  f.DKPModesMain.RoundDropDown:SetPoint("TOPLEFT", costBody, "TOPLEFT", COL1, -70)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.RoundDropDown, FIELD_W)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.RoundDropDown, core.DB.modes.rounding)
 
   -- Dropdown Menu Function
   function f.DKPModesMain.RoundDropDown:SetValue(newValue)
     core.DB.modes.rounding = newValue;
-    LibDD:UIDropDownMenu_SetText(f.DKPModesMain.RoundDropDown, newValue)
-    LibDD:CloseDropDownMenus()
+    DD:UIDropDownMenu_SetText(f.DKPModesMain.RoundDropDown, newValue)
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.RoundDropDown:SetScript("OnLeave", function(self)
@@ -265,43 +274,42 @@ function CommDKP:DKPModes_Main()
       GameTooltip:Hide()
     end)
 
-  f.DKPModesMain.RoundHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.RoundHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.RoundDropDown, "TOPLEFT", 25, 0);
-  f.DKPModesMain.RoundHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.RoundHeader:SetText(L["DKPROUNDING"])
+  f.DKPModesMain.RoundHeader = W.CreateText(costBody, "label", L["DKPROUNDING"], "LEFT")
+  f.DKPModesMain.RoundHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.RoundDropDown, "TOPLEFT", 0, 3);
 
   -- MAX Bid button behavior
-  f.DKPModesMain.MaxBidBehaviorDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.MaxBidBehaviorDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", bidBody);
 
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.MaxBidBehaviorDropDown, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.MaxBidBehaviorDropDown, function(self, level, menuList)
     
-  local MaxBehavior = LibDD:UIDropDownMenu_CreateInfo()
+  local MaxBehavior = DD:UIDropDownMenu_CreateInfo()
     MaxBehavior.func = self.SetValue
-    MaxBehavior.fontObject = "CommDKPSmallCenter"
     MaxBehavior.text, MaxBehavior.arg1, MaxBehavior.checked, MaxBehavior.isNotRadio = L["MAXBIDBEHAVIORMAXDKP"], "Max DKP", "Max DKP" == core.DB.modes.MaxBehavior, false
-    LibDD:UIDropDownMenu_AddButton(MaxBehavior)
+    DD:UIDropDownMenu_AddButton(MaxBehavior)
     MaxBehavior.text, MaxBehavior.arg1, MaxBehavior.checked, MaxBehavior.isNotRadio = L["MAXBIDBEHAVIORMAXITEMVALUE"], "Max Item Value", "Max Item Value" == core.DB.modes.MaxBehavior, false
-    LibDD:UIDropDownMenu_AddButton(MaxBehavior)
+    DD:UIDropDownMenu_AddButton(MaxBehavior)
     MaxBehavior.text, MaxBehavior.arg1, MaxBehavior.checked, MaxBehavior.isNotRadio = L["MAXBIDBEHAVIORMIN"], "Min(Max DKP, Max Item Value)", "Min(Max DKP, Max Item Value)" == core.DB.modes.MaxBehavior, false
-    LibDD:UIDropDownMenu_AddButton(MaxBehavior)
+    DD:UIDropDownMenu_AddButton(MaxBehavior)
   end)
 
-  f.DKPModesMain.MaxBidBehaviorDropDown:SetPoint("TOPLEFT", f.DKPModesMain.ModesDropDown, "BOTTOMLEFT", 0, -50)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.MaxBidBehaviorDropDown, 200)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, core.DB.modes.MaxBehavior)
+  f.DKPModesMain.MaxBidBehaviorDropDown:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL1, -22)
+  -- AD-32.2.2 (CDKP-024, BR-24.3a): "Min(Max DKP, Max Item Value)" needs ~182 px of label; widen into the COL1 gutter
+  -- up to W.GUT (8 px) before COL2: 233 - 12 - 8 = 213 -> 188 px of label. Header anchors to TOPLEFT (unchanged).
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.MaxBidBehaviorDropDown, COL2 - COL1 - W.GUT)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, core.DB.modes.MaxBehavior)
 
   -- Dropdown Menu Function
   function f.DKPModesMain.MaxBidBehaviorDropDown:SetValue(newValue)
     core.DB.modes.MaxBehavior = newValue;
     if newValue == "Max DKP" then
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMAXDKP"])
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMAXDKP"])
     elseif newValue == "Max Item Value" then
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMAXITEMVALUE"])
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMAXITEMVALUE"])
     else
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMIN"])
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.MaxBidBehaviorDropDown, L["MAXBIDBEHAVIORMIN"])
     end
-    LibDD:CloseDropDownMenus()
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.MaxBidBehaviorDropDown:SetScript("OnLeave", function(self)
@@ -318,25 +326,19 @@ function CommDKP:DKPModes_Main()
       GameTooltip:Hide()
     end)
   
-  f.DKPModesMain.MaxBidBehaviorHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.MaxBidBehaviorHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.MaxBidBehaviorDropDown, "TOPLEFT", 25, 0);
-  f.DKPModesMain.MaxBidBehaviorHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.MaxBidBehaviorHeader:SetText(L["MAXBIDBEHAVIOR"])
+  f.DKPModesMain.MaxBidBehaviorHeader = W.CreateText(bidBody, "label", L["MAXBIDBEHAVIOR"], "LEFT")
+  f.DKPModesMain.MaxBidBehaviorHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.MaxBidBehaviorDropDown, "TOPLEFT", 0, 3);
 
   -- AntiSnipe Option
 
-    f.DKPModesMain.AntiSnipe = CreateFrame("EditBox", nil, f.DKPModesMain, "BackdropTemplate")
+    f.DKPModesMain.AntiSnipe = CreateFrame("EditBox", nil, bidBody, "BackdropTemplate")
   
     f.DKPModesMain.AntiSnipe:SetAutoFocus(false)
     f.DKPModesMain.AntiSnipe:SetMultiLine(false)
-    f.DKPModesMain.AntiSnipe:SetPoint("TOPLEFT", f.DKPModesMain.RoundDropDown, "BOTTOMLEFT", 18, -15)
-    f.DKPModesMain.AntiSnipe:SetSize(100, 24)
-    CommDKP:ApplyBackdrop(f.DKPModesMain.AntiSnipe, "SolidEdge", "InputBg", "InputBorderAccent")
+    f.DKPModesMain.AntiSnipe:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL2, -70)
+    f.DKPModesMain.AntiSnipe:SetSize(70, W.H)
     f.DKPModesMain.AntiSnipe:SetMaxLetters(8)
-    f.DKPModesMain.AntiSnipe:SetTextColor(1, 1, 1, 1)
-    f.DKPModesMain.AntiSnipe:SetFontObject("CommDKPSmallRight")
-    f.DKPModesMain.AntiSnipe:SetTextInsets(10, 15, 5, 5)
-    f.DKPModesMain.AntiSnipe:SetText(core.DB.modes.AntiSnipe)
+f.DKPModesMain.AntiSnipe:SetText(core.DB.modes.AntiSnipe)
     f.DKPModesMain.AntiSnipe:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
       core.DB.modes.AntiSnipe = f.DKPModesMain.AntiSnipe:GetNumber()
       self:ClearFocus()
@@ -369,34 +371,32 @@ function CommDKP:DKPModes_Main()
     f.DKPModesMain.AntiSnipe:SetScript("OnLeave", function(self)
       GameTooltip:Hide()
     end)
+    W.StyleEditBox(f.DKPModesMain.AntiSnipe, { numeric = true })
 
-    f.DKPModesMain.AntiSnipe.Header = f.DKPModesMain.AntiSnipe:CreateFontString(nil, "OVERLAY")
-    f.DKPModesMain.AntiSnipe.Header:SetFontObject("CommDKPNormalLeft");
-    f.DKPModesMain.AntiSnipe.Header:SetPoint("BOTTOMLEFT", f.DKPModesMain.AntiSnipe, "TOPLEFT", 0, 2);
-    f.DKPModesMain.AntiSnipe.Header:SetText(L["ANTISNIPE"])
+    f.DKPModesMain.AntiSnipe.Header = W.CreateText(f.DKPModesMain.AntiSnipe, "label", L["ANTISNIPE"], "LEFT")
+    f.DKPModesMain.AntiSnipe.Header:SetPoint("BOTTOMLEFT", f.DKPModesMain.AntiSnipe, "TOPLEFT", 0, 3);
 
   -- Channels DROPDOWN box 
-  f.DKPModesMain.ChannelsDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.ChannelsDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", bidBody);
 
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.ChannelsDropDown, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.ChannelsDropDown, function(self, level, menuList)
     
-  local OpenChannel = LibDD:UIDropDownMenu_CreateInfo()
+  local OpenChannel = DD:UIDropDownMenu_CreateInfo()
     OpenChannel.func = self.SetValue
-    OpenChannel.fontObject = "CommDKPSmallCenter"
     OpenChannel.keepShownOnClick = true;
     OpenChannel.isNotRadio = true;
     OpenChannel.text, OpenChannel.arg1, OpenChannel.checked = L["WHISPER"], "Whisper", true == core.DB.modes.channels.whisper
-    LibDD:UIDropDownMenu_AddButton(OpenChannel)
+    DD:UIDropDownMenu_AddButton(OpenChannel)
     OpenChannel.text, OpenChannel.arg1, OpenChannel.checked = L["RAID"], "Raid", true == core.DB.modes.channels.raid
-    LibDD:UIDropDownMenu_AddButton(OpenChannel)
+    DD:UIDropDownMenu_AddButton(OpenChannel)
     OpenChannel.text, OpenChannel.arg1, OpenChannel.checked = L["GUILD"], "Guild", true == core.DB.modes.channels.guild
-    LibDD:UIDropDownMenu_AddButton(OpenChannel)
+    DD:UIDropDownMenu_AddButton(OpenChannel)
   end)
 
-  f.DKPModesMain.ChannelsDropDown:SetPoint("LEFT", f.DKPModesMain.ModesDropDown, "RIGHT", 30, 0)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.ChannelsDropDown, 150)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ChannelsDropDown, L["OPENCHANNELS"])
+  f.DKPModesMain.ChannelsDropDown:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL1, -70)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.ChannelsDropDown, FIELD_W)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.ChannelsDropDown, L["OPENCHANNELS"])
 
   -- Dropdown Menu Function
   function f.DKPModesMain.ChannelsDropDown:SetValue(arg1)
@@ -408,8 +408,8 @@ function CommDKP:DKPModes_Main()
       core.DB.modes.channels.guild = not core.DB.modes.channels.guild
     end
 
-    LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ChannelsDropDown, "Open Channels")
-    LibDD:CloseDropDownMenus()
+    DD:UIDropDownMenu_SetText(f.DKPModesMain.ChannelsDropDown, "Open Channels")
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.ChannelsDropDown:SetScript("OnEnter", function(self)
@@ -422,15 +422,13 @@ function CommDKP:DKPModes_Main()
     GameTooltip:Hide()
   end)
 
-  f.DKPModesMain.ChannelsHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ChannelsHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ChannelsDropDown, "TOPLEFT", 25, 0);
-  f.DKPModesMain.ChannelsHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.ChannelsHeader:SetText(L["COMMANDCHANNELS"])
+  f.DKPModesMain.ChannelsHeader = W.CreateText(bidBody, "label", L["COMMANDCHANNELS"], "LEFT")
+  f.DKPModesMain.ChannelsHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ChannelsDropDown, "TOPLEFT", 0, 3);
 
   -- Cost Auto Update Value DROPDOWN box 
   if not core.DB.modes.CostSelection then core.DB.modes.CostSelection = "Second Bidder" end
-  f.DKPModesMain.CostSelection = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
-  f.DKPModesMain.CostSelection:SetPoint("TOPLEFT", f.DKPModesMain.ChannelsDropDown, "BOTTOMLEFT", 0, -10)
+  f.DKPModesMain.CostSelection = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", costBody);
+  f.DKPModesMain.CostSelection:SetPoint("TOPLEFT", costBody, "TOPLEFT", COL2, -22)
 
   local LocalCostSel;
 
@@ -443,23 +441,22 @@ function CommDKP:DKPModes_Main()
   end
 
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.CostSelection, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.CostSelection, function(self, level, menuList)
     
-  local CostSelect = LibDD:UIDropDownMenu_CreateInfo()
+  local CostSelect = DD:UIDropDownMenu_CreateInfo()
     CostSelect.func = self.SetValue
-    CostSelect.fontObject = "CommDKPSmallCenter"
     CostSelect.text, CostSelect.arg1, CostSelect.checked, CostSelect.isNotRadio = L["FIRSTBIDDER"], "First Bidder", "First Bidder" == core.DB.modes.CostSelection, false
-    LibDD:UIDropDownMenu_AddButton(CostSelect)
+    DD:UIDropDownMenu_AddButton(CostSelect)
     CostSelect.text, CostSelect.arg1, CostSelect.checked, CostSelect.isNotRadio = L["SECONDBIDDER"], "Second Bidder", "Second Bidder" == core.DB.modes.CostSelection, false
-    LibDD:UIDropDownMenu_AddButton(CostSelect)
+    DD:UIDropDownMenu_AddButton(CostSelect)
     CostSelect.text, CostSelect.arg1, CostSelect.checked, CostSelect.isNotRadio = L["SECONDBIDDERORMIN"], "Second Bidder or Min", "Second Bidder or Min" == core.DB.modes.CostSelection, false
-    LibDD:UIDropDownMenu_AddButton(CostSelect)
+    DD:UIDropDownMenu_AddButton(CostSelect)
   end)
   
   
 
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.CostSelection, 150)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.CostSelection, LocalCostSel)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.CostSelection, FIELD_W)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.CostSelection, LocalCostSel)
 
   -- Dropdown Menu Function
   function f.DKPModesMain.CostSelection:SetValue(arg1)
@@ -473,8 +470,8 @@ function CommDKP:DKPModes_Main()
       LocalCostSel = L["SECONDBIDDERORMIN"]
     end
 
-    LibDD:UIDropDownMenu_SetText(f.DKPModesMain.CostSelection, LocalCostSel)
-    LibDD:CloseDropDownMenus()
+    DD:UIDropDownMenu_SetText(f.DKPModesMain.CostSelection, LocalCostSel)
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.CostSelection:SetScript("OnEnter", function(self)
@@ -487,10 +484,8 @@ function CommDKP:DKPModes_Main()
     GameTooltip:Hide()
   end)
 
-  f.DKPModesMain.CostSelectionHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.CostSelectionHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.CostSelection, "TOPLEFT", 25, 0);
-  f.DKPModesMain.CostSelectionHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.CostSelectionHeader:SetText(L["COSTAUTOUPDATEVALUE"])
+  f.DKPModesMain.CostSelectionHeader = W.CreateText(costBody, "label", L["COSTAUTOUPDATEVALUE"], "LEFT")
+  f.DKPModesMain.CostSelectionHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.CostSelection, "TOPLEFT", 0, 3);
 
   if not (core.DB.modes.mode == "Minimum Bid Values" or (core.DB.modes.mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid")) then
     f.DKPModesMain.CostSelection:Hide()
@@ -500,18 +495,14 @@ function CommDKP:DKPModes_Main()
   -- Artificial Inflation Editbox
   if not core.DB.modes.Inflation then core.DB.modes.Inflation = 0 end
 
-    f.DKPModesMain.Inflation = CreateFrame("EditBox", nil, f.DKPModesMain, "BackdropTemplate")
+    f.DKPModesMain.Inflation = CreateFrame("EditBox", nil, costBody, "BackdropTemplate")
   
     f.DKPModesMain.Inflation:SetAutoFocus(false)
     f.DKPModesMain.Inflation:SetMultiLine(false)
-    f.DKPModesMain.Inflation:SetPoint("TOPLEFT", f.DKPModesMain.CostSelection, "BOTTOMLEFT", 20, -15)
-    f.DKPModesMain.Inflation:SetSize(100, 24)
-    CommDKP:ApplyBackdrop(f.DKPModesMain.Inflation, "SolidEdge", "InputBg", "InputBorderAccent")
+    f.DKPModesMain.Inflation:SetPoint("TOPLEFT", costBody, "TOPLEFT", COL2, -70)
+    f.DKPModesMain.Inflation:SetSize(70, W.H)
     f.DKPModesMain.Inflation:SetMaxLetters(8)
-    f.DKPModesMain.Inflation:SetTextColor(1, 1, 1, 1)
-    f.DKPModesMain.Inflation:SetFontObject("CommDKPSmallRight")
-    f.DKPModesMain.Inflation:SetTextInsets(10, 15, 5, 5)
-    f.DKPModesMain.Inflation:SetText(core.DB.modes.Inflation)
+f.DKPModesMain.Inflation:SetText(core.DB.modes.Inflation)
     f.DKPModesMain.Inflation:Hide();
     f.DKPModesMain.Inflation:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
       core.DB.modes.Inflation = f.DKPModesMain.Inflation:GetNumber()
@@ -534,12 +525,11 @@ function CommDKP:DKPModes_Main()
     f.DKPModesMain.Inflation:SetScript("OnLeave", function(self)
       GameTooltip:Hide()
     end)
+    W.StyleEditBox(f.DKPModesMain.Inflation, { numeric = true })
 
-    -- Min Roll Header
-    f.DKPModesMain.Inflation.Header = f.DKPModesMain.Inflation:CreateFontString(nil, "OVERLAY")
-    f.DKPModesMain.Inflation.Header:SetFontObject("CommDKPNormalLeft");
-    f.DKPModesMain.Inflation.Header:SetPoint("BOTTOM", f.DKPModesMain.Inflation, "TOP", -20, 2);
-    f.DKPModesMain.Inflation.Header:SetText(L["INFLATION"])
+    -- Inflation Header
+    f.DKPModesMain.Inflation.Header = W.CreateText(f.DKPModesMain.Inflation, "label", L["INFLATION"], "LEFT")
+    f.DKPModesMain.Inflation.Header:SetPoint("BOTTOMLEFT", f.DKPModesMain.Inflation, "TOPLEFT", 0, 3);
 
     if core.DB.modes.mode == "Zero Sum" then
       f.DKPModesMain.Inflation:Show()
@@ -547,22 +537,21 @@ function CommDKP:DKPModes_Main()
     end
 
     -- ZeroSum Type DROPDOWN box 
-  f.DKPModesMain.ZeroSumType = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.ZeroSumType = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", bidBody);
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.ZeroSumType, function(self, level, menuList)
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.ZeroSumType, function(self, level, menuList)
     
-  local BidType = LibDD:UIDropDownMenu_CreateInfo()
+  local BidType = DD:UIDropDownMenu_CreateInfo()
     BidType.func = self.SetValue
-    BidType.fontObject = "CommDKPSmallCenter"
     BidType.text, BidType.arg1, BidType.checked, BidType.isNotRadio = L["STATIC"], "Static", "Static" == core.DB.modes.ZeroSumBidType, false
-    LibDD:UIDropDownMenu_AddButton(BidType)
+    DD:UIDropDownMenu_AddButton(BidType)
     BidType.text, BidType.arg1, BidType.checked, BidType.isNotRadio = L["MINIMUMBID"], "Minimum Bid", "Minimum Bid" == core.DB.modes.ZeroSumBidType, false
-    LibDD:UIDropDownMenu_AddButton(BidType)
+    DD:UIDropDownMenu_AddButton(BidType)
   end)
 
-  f.DKPModesMain.ZeroSumType:SetPoint("TOPLEFT", f.DKPModesMain.Inflation, "BOTTOMLEFT", -20, -20)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.ZeroSumType, 150)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ZeroSumType, core.DB.modes.ZeroSumBidType)
+  f.DKPModesMain.ZeroSumType:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL2, -22)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.ZeroSumType, FIELD_W)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.ZeroSumType, core.DB.modes.ZeroSumBidType)
 
   -- Dropdown Menu Function
   function f.DKPModesMain.ZeroSumType:SetValue(newValue)
@@ -586,8 +575,8 @@ function CommDKP:DKPModes_Main()
       f.DKPModesMain.MaxBidBehaviorHeader:Show();
     end
 
-    LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ZeroSumType, newValue)
-    LibDD:CloseDropDownMenus()
+    DD:UIDropDownMenu_SetText(f.DKPModesMain.ZeroSumType, newValue)
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.ZeroSumType:SetScript("OnEnter", function(self)
@@ -600,10 +589,8 @@ function CommDKP:DKPModes_Main()
     GameTooltip:Hide()
   end)
 
-  f.DKPModesMain.ZeroSumTypeHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ZeroSumTypeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ZeroSumType, "TOPLEFT", 25, 0);
-  f.DKPModesMain.ZeroSumTypeHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.ZeroSumTypeHeader:SetText(L["BIDMETHOD"])
+  f.DKPModesMain.ZeroSumTypeHeader = W.CreateText(bidBody, "label", L["BIDMETHOD"], "LEFT")
+  f.DKPModesMain.ZeroSumTypeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ZeroSumType, "TOPLEFT", 0, 3);
 
   if core.DB.modes.mode ~= "Zero Sum" then
     f.DKPModesMain.ZeroSumType:Hide()
@@ -611,23 +598,22 @@ function CommDKP:DKPModes_Main()
   end
 
   -- Item Cost Value DROPDOWN box 
-  f.DKPModesMain.ItemCostDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain);
+  f.DKPModesMain.ItemCostDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", costBody);
   -- Create and bind the initialization function to the dropdown menu
-    LibDD:UIDropDownMenu_Initialize(f.DKPModesMain.ItemCostDropDown, 
+    DD:UIDropDownMenu_Initialize(f.DKPModesMain.ItemCostDropDown, 
     function(self, level, menuList)
       
-      local CostValue = LibDD:UIDropDownMenu_CreateInfo()
+      local CostValue = DD:UIDropDownMenu_CreateInfo()
       CostValue.func = self.SetValue
-      CostValue.fontObject = "CommDKPSmallCenter"
       CostValue.text, CostValue.arg1, CostValue.checked, CostValue.isNotRadio = L["INTEGER"], "Integer", "Integer" == core.DB.modes.costvalue, false
-      LibDD:UIDropDownMenu_AddButton(CostValue)
+      DD:UIDropDownMenu_AddButton(CostValue)
       CostValue.text, CostValue.arg1, CostValue.checked, CostValue.isNotRadio = L["PERCENT"], "Percent", "Percent" == core.DB.modes.costvalue, false
-      LibDD:UIDropDownMenu_AddButton(CostValue)
+      DD:UIDropDownMenu_AddButton(CostValue)
     end)
   
-  f.DKPModesMain.ItemCostDropDown:SetPoint("TOPLEFT", f.DKPModesMain.ModesDropDown, "BOTTOMLEFT", 0, -50)
-  LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.ItemCostDropDown, 150)
-  LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L[string.upper(core.DB.modes.costvalue)])
+  f.DKPModesMain.ItemCostDropDown:SetPoint("TOPLEFT", costBody, "TOPLEFT", COL1, -22)
+  DD:UIDropDownMenu_SetWidth(f.DKPModesMain.ItemCostDropDown, FIELD_W)
+  DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L[string.upper(core.DB.modes.costvalue)])
 
   -- Dropdown Menu Function
   function f.DKPModesMain.ItemCostDropDown:SetValue(arg1)
@@ -639,18 +625,18 @@ function CommDKP:DKPModes_Main()
         f.DKPModesMain.AllowNegativeBidders:Show()
         f.DKPModesMain.AllowNegativeBidders:SetChecked(core.DB.modes.AllowNegativeBidders)
       end
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["INTEGER"])
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["INTEGER"])
     elseif arg1 == "Percent" then
       core.DB.modes.costvalue = "Percent"
       f.DKPModesMain.SubZeroBidding:Hide()
       f.DKPModesMain.AllowNegativeBidders:Hide()
       core.DB.modes.SubZeroBidding = false;
       f.DKPModesMain.SubZeroBidding:SetChecked(false)
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["PERCENT"])
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.ItemCostDropDown, L["PERCENT"])
     end
 
     
-    LibDD:CloseDropDownMenus()
+    DD:CloseDropDownMenus()
   end
 
   f.DKPModesMain.ItemCostDropDown:SetScript("OnEnter", function(self)
@@ -663,10 +649,8 @@ function CommDKP:DKPModes_Main()
     GameTooltip:Hide()
   end)
 
-  f.DKPModesMain.ItemCostHeader = f.DKPModesMain:CreateFontString(nil, "OVERLAY")
-  f.DKPModesMain.ItemCostHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ItemCostDropDown, "TOPLEFT", 25, 0);
-  f.DKPModesMain.ItemCostHeader:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.ItemCostHeader:SetText(L["ITEMCOSTTYPES"])
+  f.DKPModesMain.ItemCostHeader = W.CreateText(costBody, "label", L["ITEMCOSTTYPES"], "LEFT")
+  f.DKPModesMain.ItemCostHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.ItemCostDropDown, "TOPLEFT", 0, 3);
 
   if core.DB.modes.mode == "Minimum Bid Values" then
     f.DKPModesMain.ItemCostDropDown:Hide();
@@ -697,13 +681,9 @@ function CommDKP:DKPModes_Main()
   end
 
   -- Sub Zero Bidding Checkbox
-  f.DKPModesMain.SubZeroBidding = CreateFrame("CheckButton", nil, f.DKPModesMain, "UICheckButtonTemplate");
+  f.DKPModesMain.SubZeroBidding = W.CreateCheckbox(bidBody, nil, L["SUBZEROBIDDING"]);
   f.DKPModesMain.SubZeroBidding:SetChecked(core.DB.modes.SubZeroBidding)
-  f.DKPModesMain.SubZeroBidding:SetScale(0.6);
-  f.DKPModesMain.SubZeroBidding.text:SetText("  |cff5151de"..L["SUBZEROBIDDING"].."|r");
-  f.DKPModesMain.SubZeroBidding.text:SetScale(1.5);
-  f.DKPModesMain.SubZeroBidding.text:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.SubZeroBidding:SetPoint("TOP", f.DKPModesMain.ModesDropDown, "BOTTOMLEFT", 60, 0);
+  f.DKPModesMain.SubZeroBidding:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL1, -106);
   f.DKPModesMain.SubZeroBidding:SetScript("OnClick", function(self)
     if self:GetChecked() == true then
       core.DB.modes.SubZeroBidding = true;
@@ -732,13 +712,9 @@ function CommDKP:DKPModes_Main()
   end
   
   -- Allow Bids below zero Checkbox
-  f.DKPModesMain.AllowNegativeBidders = CreateFrame("CheckButton", nil, f.DKPModesMain, "UICheckButtonTemplate");
+  f.DKPModesMain.AllowNegativeBidders = W.CreateCheckbox(bidBody, nil, L["ALLOWNEGATIVEBIDDERS"]);
   f.DKPModesMain.AllowNegativeBidders:SetChecked(core.DB.modes.AllowNegativeBidders)
-  f.DKPModesMain.AllowNegativeBidders:SetScale(0.6);
-  f.DKPModesMain.AllowNegativeBidders.text:SetText("  |cff5151de"..L["ALLOWNEGATIVEBIDDERS"].."|r");
-  f.DKPModesMain.AllowNegativeBidders.text:SetScale(1.5);
-  f.DKPModesMain.AllowNegativeBidders.text:SetFontObject("CommDKPSmallLeft")
-  f.DKPModesMain.AllowNegativeBidders:SetPoint("TOPLEFT", f.DKPModesMain.SubZeroBidding, "BOTTOMLEFT", 0, 0);
+  f.DKPModesMain.AllowNegativeBidders:SetPoint("TOPLEFT", bidBody, "TOPLEFT", COL2, -106);
   f.DKPModesMain.AllowNegativeBidders:SetScript("OnClick", function(self)
     if self:GetChecked() == true then
       core.DB.modes.AllowNegativeBidders = true;
@@ -767,11 +743,9 @@ function CommDKP:DKPModes_Main()
   -- Roll Container
   ---
 
-    f.DKPModesMain.RollContainer = CreateFrame("Frame", nil, f.DKPModesMain, "BackdropTemplate");
-    
-    f.DKPModesMain.RollContainer:SetSize(210, 180);
-    f.DKPModesMain.RollContainer:SetPoint("TOPLEFT", f.DKPModesMain.ChannelsDropDown, "BOTTOMLEFT", -10, -20)
-    CommDKP:ApplyBackdrop(f.DKPModesMain.RollContainer, "SolidEdge", "InputBg", "InputBorderAccent")
+    f.DKPModesMain.RollContainer = W.CreateCard(f.DKPModesMain, L["ROLLSETTINGS"], CARD_W, 115);
+    f.DKPModesMain.RollContainer:SetPoint("TOPLEFT", f.DKPModesMain.BidCard, "BOTTOMLEFT", 0, -8)
+    local rollBody = f.DKPModesMain.RollContainer.Body
     f.DKPModesMain.RollContainer:Hide();
     if core.DB.modes.mode == "Roll Based Bidding" then
       f.DKPModesMain.RollContainer:Show()
@@ -780,11 +754,7 @@ function CommDKP:DKPModes_Main()
     ---
     -- Roll Container Header
     ---
-      f.DKPModesMain.RollContainer.Header = f.DKPModesMain.RollContainer:CreateFontString(nil, "OVERLAY")
-      f.DKPModesMain.RollContainer.Header:SetFontObject("CommDKPLargeLeft");
-      f.DKPModesMain.RollContainer.Header:SetScale(0.6)
-      f.DKPModesMain.RollContainer.Header:SetPoint("TOPLEFT", f.DKPModesMain.RollContainer, "TOPLEFT", 15, -15);
-      f.DKPModesMain.RollContainer.Header:SetText(L["ROLLSETTINGS"])
+      -- (the legacy large L["ROLLSETTINGS"] heading is now the card title; .Header is the card's header band)
 
     ---
     -- Roll bidding mode dropdown
@@ -794,37 +764,30 @@ function CommDKP:DKPModes_Main()
         core.DB.modes.RollMode = "Default"
       end
 
-      f.DKPModesMain.RollContainer.RollBiddingModeDropdown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f.DKPModesMain.RollContainer);
+      f.DKPModesMain.RollContainer.RollBiddingModeDropdown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", rollBody);
 
-      LibDD:UIDropDownMenu_Initialize(
+      DD:UIDropDownMenu_Initialize(
         f.DKPModesMain.RollContainer.RollBiddingModeDropdown,
           function(self, level, menuList)
             
-            local _rollMode = LibDD:UIDropDownMenu_CreateInfo()
+            local _rollMode = DD:UIDropDownMenu_CreateInfo()
             _rollMode.func = self.SetValue
-            _rollMode.fontObject = "CommDKPSmallCenter"
             _rollMode.text = "Default"
             _rollMode.arg1 = "Default"
             _rollMode.checked = ("Default" == core.DB.modes.RollMode)
             _rollMode.isNotRadio = false
-            LibDD:UIDropDownMenu_AddButton(_rollMode)
+            DD:UIDropDownMenu_AddButton(_rollMode)
             _rollMode.text = "Ni Karma"
             _rollMode.arg1 = "Ni Karma"
             _rollMode.checked = ("Ni Karma" == core.DB.modes.RollMode)
             _rollMode.isNotRadio = false
-            LibDD:UIDropDownMenu_AddButton(_rollMode)
+            DD:UIDropDownMenu_AddButton(_rollMode)
           end
       )
     
-      f.DKPModesMain.RollContainer.RollBiddingModeDropdown:SetPoint(
-        "TOPLEFT", 
-        f.DKPModesMain.RollContainer.Header, 
-        "BOTTOMLEFT",
-        -10, 
-        -10
-      )
-      LibDD:UIDropDownMenu_SetWidth(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, 150)
-      LibDD:UIDropDownMenu_SetText(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, core.DB.modes.RollMode)
+      f.DKPModesMain.RollContainer.RollBiddingModeDropdown:SetPoint("TOPLEFT", rollBody, "TOPLEFT", COL1, -22)
+      DD:UIDropDownMenu_SetWidth(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, FIELD_W)
+      DD:UIDropDownMenu_SetText(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, core.DB.modes.RollMode)
 
       -- Dropdown Menu Function
       function f.DKPModesMain.RollContainer.RollBiddingModeDropdown:SetValue(arg1)
@@ -845,8 +808,8 @@ function CommDKP:DKPModes_Main()
           f.DKPModesMain.RollContainer.maxKarma:Show()
           f.DKPModesMain.RollContainer.maxKarma.Header:Show()
         end
-        LibDD:UIDropDownMenu_SetText(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, core.DB.modes.RollMode);
-        LibDD:CloseDropDownMenus()
+        DD:UIDropDownMenu_SetText(f.DKPModesMain.RollContainer.RollBiddingModeDropdown, core.DB.modes.RollMode);
+        DD:CloseDropDownMenus()
       end
 
       f.DKPModesMain.RollContainer.RollBiddingModeDropdown:SetScript(
@@ -868,10 +831,8 @@ function CommDKP:DKPModes_Main()
     -- Roll settings sub mode header
     ---
 
-      f.DKPModesMain.RollContainer.SubModeHeader = f.DKPModesMain.RollContainer:CreateFontString(nil, "OVERLAY")
-      f.DKPModesMain.RollContainer.SubModeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.RollContainer.RollBiddingModeDropdown, "TOPLEFT", 90, 2);
-      f.DKPModesMain.RollContainer.SubModeHeader:SetFontObject("CommDKPSmallLeft")
-      f.DKPModesMain.RollContainer.SubModeHeader:SetText("Roll sub mode")
+      f.DKPModesMain.RollContainer.SubModeHeader = W.CreateText(rollBody, "label", "Roll sub mode", "LEFT")
+      f.DKPModesMain.RollContainer.SubModeHeader:SetPoint("BOTTOMLEFT", f.DKPModesMain.RollContainer.RollBiddingModeDropdown, "TOPLEFT", 0, 3);
 
     ---
     -- Default roll sub section
@@ -880,19 +841,15 @@ function CommDKP:DKPModes_Main()
     ---
     -- Min Roll Editbox
     ---
-      f.DKPModesMain.RollContainer.rollMin = CreateFrame("EditBox", nil, f.DKPModesMain.RollContainer, "BackdropTemplate")
+      f.DKPModesMain.RollContainer.rollMin = CreateFrame("EditBox", nil, rollBody, "BackdropTemplate")
 
       
       f.DKPModesMain.RollContainer.rollMin:SetAutoFocus(false)
       f.DKPModesMain.RollContainer.rollMin:SetMultiLine(false)
-      f.DKPModesMain.RollContainer.rollMin:SetPoint("TOPLEFT", f.DKPModesMain.RollContainer, "TOPLEFT", 20, -80)
-      f.DKPModesMain.RollContainer.rollMin:SetSize(70, 24)
-      CommDKP:ApplyBackdrop(f.DKPModesMain.RollContainer.rollMin, "SolidEdge", "InputBg", "InputBorderAccent")
+      f.DKPModesMain.RollContainer.rollMin:SetPoint("TOPLEFT", rollBody, "TOPLEFT", COL2, -22)
+      f.DKPModesMain.RollContainer.rollMin:SetSize(60, W.H)
       f.DKPModesMain.RollContainer.rollMin:SetMaxLetters(6)
-      f.DKPModesMain.RollContainer.rollMin:SetTextColor(1, 1, 1, 1)
-      f.DKPModesMain.RollContainer.rollMin:SetFontObject("CommDKPSmallRight")
-      f.DKPModesMain.RollContainer.rollMin:SetTextInsets(10, 15, 5, 5)
-      f.DKPModesMain.RollContainer.rollMin:SetText(core.DB.modes.rolls.min)
+f.DKPModesMain.RollContainer.rollMin:SetText(core.DB.modes.rolls.min)
       f.DKPModesMain.RollContainer.rollMin:SetScript(
         "OnEscapePressed", 
           function(self)    -- clears focus on esc
@@ -930,38 +887,31 @@ function CommDKP:DKPModes_Main()
           end
         )
       f.DKPModesMain.RollContainer.rollMin:SetScript(
-        "OnLeave", 
+        "OnLeave",
           function(self)
             GameTooltip:Hide()
           end
         )
+      W.StyleEditBox(f.DKPModesMain.RollContainer.rollMin, { numeric = true })
 
     ---
     -- Min Roll Header
     ---
-      f.DKPModesMain.RollContainer.rollMin.Header = f.DKPModesMain.RollContainer.rollMin:CreateFontString(nil, "OVERLAY")
-      f.DKPModesMain.RollContainer.rollMin.Header:SetFontObject("CommDKPNormalLeft");
-      f.DKPModesMain.RollContainer.rollMin.Header:SetPoint("BOTTOM", f.DKPModesMain.RollContainer.rollMin, "TOP", -20, 2);
-      f.DKPModesMain.RollContainer.rollMin.Header:SetText(L["MIN"])
+      f.DKPModesMain.RollContainer.rollMin.Header = W.CreateText(f.DKPModesMain.RollContainer.rollMin, "label", L["MIN"], "LEFT")
+      f.DKPModesMain.RollContainer.rollMin.Header:SetPoint("BOTTOMLEFT", f.DKPModesMain.RollContainer.rollMin, "TOPLEFT", 0, 3);
 
-        -- Dash Between Rolls
-        f.DKPModesMain.RollContainer.dash = f.DKPModesMain.RollContainer:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.dash:SetFontObject("CommDKPLargeLeft");
-        f.DKPModesMain.RollContainer.dash:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", 9, 0);
-        f.DKPModesMain.RollContainer.dash:SetText("-")
+        -- Dash Between Rolls (§12.4.4: a textMuted en dash)
+        f.DKPModesMain.RollContainer.dash = W.CreateText(rollBody, "body", "\226\128\147", "CENTER", "textMuted")
+        f.DKPModesMain.RollContainer.dash:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", 18, 0);
 
         -- Max Roll Editbox
-      f.DKPModesMain.RollContainer.rollMax = CreateFrame("EditBox", nil, f.DKPModesMain.RollContainer, "BackdropTemplate")
+      f.DKPModesMain.RollContainer.rollMax = CreateFrame("EditBox", nil, rollBody, "BackdropTemplate")
         f.DKPModesMain.RollContainer.rollMax:SetAutoFocus(false)
         f.DKPModesMain.RollContainer.rollMax:SetMultiLine(false)
-        f.DKPModesMain.RollContainer.rollMax:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", 24, 0)
-        f.DKPModesMain.RollContainer.rollMax:SetSize(70, 24)
-        CommDKP:ApplyBackdrop(f.DKPModesMain.RollContainer.rollMax, "SolidEdge", "InputBg", "InputBorderAccent")
+        f.DKPModesMain.RollContainer.rollMax:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", 40, 0)
+        f.DKPModesMain.RollContainer.rollMax:SetSize(60, W.H)
         f.DKPModesMain.RollContainer.rollMax:SetMaxLetters(6)
-        f.DKPModesMain.RollContainer.rollMax:SetTextColor(1, 1, 1, 1)
-        f.DKPModesMain.RollContainer.rollMax:SetFontObject("CommDKPSmallRight")
-        f.DKPModesMain.RollContainer.rollMax:SetTextInsets(10, 15, 5, 5)
-        f.DKPModesMain.RollContainer.rollMax:SetText(core.DB.modes.rolls.max)
+f.DKPModesMain.RollContainer.rollMax:SetText(core.DB.modes.rolls.max)
         f.DKPModesMain.RollContainer.rollMax:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
           core.DB.modes.rolls.min = f.DKPModesMain.RollContainer.rollMin:GetNumber()
         core.DB.modes.rolls.max = f.DKPModesMain.RollContainer.rollMax:GetNumber()  
@@ -990,35 +940,25 @@ function CommDKP:DKPModes_Main()
         f.DKPModesMain.RollContainer.rollMax:SetScript("OnLeave", function(self)
           GameTooltip:Hide()
         end)
+        W.StyleEditBox(f.DKPModesMain.RollContainer.rollMax, { numeric = true })
 
         -- Max Roll Header
-        f.DKPModesMain.RollContainer.rollMax.Header = f.DKPModesMain.RollContainer.rollMax:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.rollMax.Header:SetFontObject("CommDKPNormalLeft");
-        f.DKPModesMain.RollContainer.rollMax.Header:SetPoint("BOTTOM", f.DKPModesMain.RollContainer.rollMax, "TOP", -20, 2);
-        f.DKPModesMain.RollContainer.rollMax.Header:SetText(L["MAX"])
+        f.DKPModesMain.RollContainer.rollMax.Header = W.CreateText(f.DKPModesMain.RollContainer.rollMax, "label", L["MAX"], "LEFT")
+        f.DKPModesMain.RollContainer.rollMax.Header:SetPoint("BOTTOMLEFT", f.DKPModesMain.RollContainer.rollMax, "TOPLEFT", 0, 3);
 
-        f.DKPModesMain.RollContainer.rollMin.perc = f.DKPModesMain.RollContainer.rollMin:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.rollMin.perc:SetFontObject("CommDKPSmallLeft");
-        f.DKPModesMain.RollContainer.rollMin.perc:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", -15, 0);
-        f.DKPModesMain.RollContainer.rollMin.perc:SetText("%")
+        f.DKPModesMain.RollContainer.rollMin.perc = W.CreateText(f.DKPModesMain.RollContainer.rollMin, "caption", "%", "LEFT", "textMuted")
+        f.DKPModesMain.RollContainer.rollMin.perc:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMin, "RIGHT", 3, 0);
         f.DKPModesMain.RollContainer.rollMin.perc:SetShown(core.DB.modes.rolls.UsePerc);
 
-        f.DKPModesMain.RollContainer.rollMax.perc = f.DKPModesMain.RollContainer.rollMax:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.rollMax.perc:SetFontObject("CommDKPSmallLeft");
-        f.DKPModesMain.RollContainer.rollMax.perc:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMax, "RIGHT", -15, 0);
-        f.DKPModesMain.RollContainer.rollMax.perc:SetText("%")
+        f.DKPModesMain.RollContainer.rollMax.perc = W.CreateText(f.DKPModesMain.RollContainer.rollMax, "caption", "%", "LEFT", "textMuted")
+        f.DKPModesMain.RollContainer.rollMax.perc:SetPoint("LEFT", f.DKPModesMain.RollContainer.rollMax, "RIGHT", 3, 0);
         f.DKPModesMain.RollContainer.rollMax.perc:SetShown(core.DB.modes.rolls.UsePerc);
 
           -- Percent Rolls Checkbox
 
-        f.DKPModesMain.RollContainer.UsePerc = CreateFrame("CheckButton", nil, f.DKPModesMain.RollContainer, "UICheckButtonTemplate");
-                  
+        f.DKPModesMain.RollContainer.UsePerc = W.CreateCheckbox(rollBody, nil, L["USEPERCENTAGE"]);
         f.DKPModesMain.RollContainer.UsePerc:SetChecked(core.DB.modes.rolls.UsePerc)
-        f.DKPModesMain.RollContainer.UsePerc:SetScale(0.6);
-        f.DKPModesMain.RollContainer.UsePerc.text:SetText("  |cff5151de"..L["USEPERCENTAGE"].."|r");
-        f.DKPModesMain.RollContainer.UsePerc.text:SetScale(1.5);
-        f.DKPModesMain.RollContainer.UsePerc.text:SetFontObject("CommDKPSmallLeft")
-        f.DKPModesMain.RollContainer.UsePerc:SetPoint("TOP", f.DKPModesMain.RollContainer.rollMin, "BOTTOMLEFT", 0, -10);
+        f.DKPModesMain.RollContainer.UsePerc:SetPoint("TOPLEFT", rollBody, "TOPLEFT", COL1, -60);
         f.DKPModesMain.RollContainer.UsePerc:SetScript("OnClick", function(self)
         core.DB.modes.rolls.UsePerc = self:GetChecked();
         f.DKPModesMain.RollContainer.rollMin.perc:SetShown(self:GetChecked())
@@ -1040,18 +980,14 @@ function CommDKP:DKPModes_Main()
       end)
 
         -- Add to Max Editbox
-      f.DKPModesMain.RollContainer.AddMax = CreateFrame("EditBox", nil, f.DKPModesMain.RollContainer, "BackdropTemplate")
+      f.DKPModesMain.RollContainer.AddMax = CreateFrame("EditBox", nil, rollBody, "BackdropTemplate")
      
         f.DKPModesMain.RollContainer.AddMax:SetAutoFocus(false)
         f.DKPModesMain.RollContainer.AddMax:SetMultiLine(false)
-        f.DKPModesMain.RollContainer.AddMax:SetPoint("TOP", f.DKPModesMain.RollContainer.rollMax, "BOTTOM", 0, -30)
-        f.DKPModesMain.RollContainer.AddMax:SetSize(70, 24)
-        CommDKP:ApplyBackdrop(f.DKPModesMain.RollContainer.AddMax, "SolidEdge", "InputBg", "InputBorderAccent")
+        f.DKPModesMain.RollContainer.AddMax:SetPoint("TOPLEFT", f.DKPModesMain.RollContainer.rollMax, "BOTTOMLEFT", 0, -12)
+        f.DKPModesMain.RollContainer.AddMax:SetSize(60, W.H)
         f.DKPModesMain.RollContainer.AddMax:SetMaxLetters(6)
-        f.DKPModesMain.RollContainer.AddMax:SetTextColor(1, 1, 1, 1)
-        f.DKPModesMain.RollContainer.AddMax:SetFontObject("CommDKPSmallRight")
-        f.DKPModesMain.RollContainer.AddMax:SetTextInsets(10, 15, 5, 5)
-        f.DKPModesMain.RollContainer.AddMax:SetText(core.DB.modes.rolls.AddToMax)
+f.DKPModesMain.RollContainer.AddMax:SetText(core.DB.modes.rolls.AddToMax)
         f.DKPModesMain.RollContainer.AddMax:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
           core.DB.modes.rolls.min = f.DKPModesMain.RollContainer.rollMin:GetNumber()
         core.DB.modes.rolls.max = f.DKPModesMain.RollContainer.rollMax:GetNumber()  
@@ -1080,12 +1016,11 @@ function CommDKP:DKPModes_Main()
         f.DKPModesMain.RollContainer.AddMax:SetScript("OnLeave", function(self)
           GameTooltip:Hide()
         end)
+        W.StyleEditBox(f.DKPModesMain.RollContainer.AddMax, { numeric = true })
 
-        -- Add to Max Header
-        f.DKPModesMain.RollContainer.AddMax.Header = f.DKPModesMain.RollContainer.rollMax:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.AddMax.Header:SetFontObject("CommDKPSmallRight");
-        f.DKPModesMain.RollContainer.AddMax.Header:SetPoint("RIGHT", f.DKPModesMain.RollContainer.AddMax, "LEFT", -5, 0);
-        f.DKPModesMain.RollContainer.AddMax.Header:SetText(L["ADDTOMAXROLL"]..": ")
+        -- Add to Max Header (label left of its field)
+        f.DKPModesMain.RollContainer.AddMax.Header = W.CreateText(rollBody, "label", L["ADDTOMAXROLL"], "RIGHT")
+        f.DKPModesMain.RollContainer.AddMax.Header:SetPoint("RIGHT", f.DKPModesMain.RollContainer.AddMax, "LEFT", -6, 0);
         
       -- hide default roll extra options if Ni Karma is selected
       if core.DB.modes.RollMode == "Ni Karma" then
@@ -1105,17 +1040,13 @@ function CommDKP:DKPModes_Main()
       -- Max Karma
       ---
 
-        f.DKPModesMain.RollContainer.maxKarma = CreateFrame("EditBox", nil, f.DKPModesMain.RollContainer, "BackdropTemplate")
+        f.DKPModesMain.RollContainer.maxKarma = CreateFrame("EditBox", nil, rollBody, "BackdropTemplate")
         f.DKPModesMain.RollContainer.maxKarma:SetAutoFocus(false)
         f.DKPModesMain.RollContainer.maxKarma:SetMultiLine(false)
-        f.DKPModesMain.RollContainer.maxKarma:SetPoint("TOP", f.DKPModesMain.RollContainer.rollMax, "BOTTOM", 0, -30)
-        f.DKPModesMain.RollContainer.maxKarma:SetSize(70, 24)
-        CommDKP:ApplyBackdrop(f.DKPModesMain.RollContainer.maxKarma, "SolidEdge", "InputBg", "InputBorderAccent")
+        f.DKPModesMain.RollContainer.maxKarma:SetPoint("TOPLEFT", f.DKPModesMain.RollContainer.rollMax, "BOTTOMLEFT", 0, -12)
+        f.DKPModesMain.RollContainer.maxKarma:SetSize(60, W.H)
         f.DKPModesMain.RollContainer.maxKarma:SetMaxLetters(6)
-        f.DKPModesMain.RollContainer.maxKarma:SetTextColor(1, 1, 1, 1)
-        f.DKPModesMain.RollContainer.maxKarma:SetFontObject("CommDKPSmallRight")
-        f.DKPModesMain.RollContainer.maxKarma:SetTextInsets(10, 15, 5, 5)
-        if core.DB.modes.rolls.maxKarma == nil then
+if core.DB.modes.rolls.maxKarma == nil then
           f.DKPModesMain.RollContainer.maxKarma:SetText("")
         else
           f.DKPModesMain.RollContainer.maxKarma:SetText(core.DB.modes.rolls.maxKarma)
@@ -1153,17 +1084,16 @@ function CommDKP:DKPModes_Main()
             end
           )
         f.DKPModesMain.RollContainer.maxKarma:SetScript(
-          "OnLeave", 
+          "OnLeave",
             function(self)
               GameTooltip:Hide()
             end
           )
+        W.StyleEditBox(f.DKPModesMain.RollContainer.maxKarma, { numeric = true })
 
-        -- max karma header
-        f.DKPModesMain.RollContainer.maxKarma.Header = f.DKPModesMain.RollContainer.rollMax:CreateFontString(nil, "OVERLAY")
-        f.DKPModesMain.RollContainer.maxKarma.Header:SetFontObject("CommDKPSmallRight");
-        f.DKPModesMain.RollContainer.maxKarma.Header:SetPoint("RIGHT", f.DKPModesMain.RollContainer.maxKarma, "LEFT", -5, 0);
-        f.DKPModesMain.RollContainer.maxKarma.Header:SetText("Max Karma to add"..": ")
+        -- max karma header (label left of its field)
+        f.DKPModesMain.RollContainer.maxKarma.Header = W.CreateText(rollBody, "label", "Max Karma to add", "RIGHT")
+        f.DKPModesMain.RollContainer.maxKarma.Header:SetPoint("RIGHT", f.DKPModesMain.RollContainer.maxKarma, "LEFT", -6, 0);
 
       if core.DB.modes.RollMode == "Default" then
         f.DKPModesMain.RollContainer.maxKarma:Hide()
@@ -1172,8 +1102,13 @@ function CommDKP:DKPModes_Main()
 
 
   -- Broadcast DKP Modes Button
-  f.DKPModesMain.BroadcastSettings = self:CreateButton("BOTTOMRIGHT", f.DKPModesMain, "BOTTOMRIGHT", -30, 30, L["BROADCASTSETTINGS"]);
-  f.DKPModesMain.BroadcastSettings:SetSize(110,25)
+  -- §12.4.4: primary, 170 wide, at BOTTOMRIGHT of the frame's content area (outside the scroll region, so it never
+  -- scrolls or clips). AD-35.5 (BR-27.6): ONE button and ONE handler, shown on BOTH tabs (Modes and Options): it
+  -- shows and hides with the window only (no pane OnShow/OnHide hooks).
+  f.DKPModesMain.BroadcastSettings = self:CreateButton("BOTTOMRIGHT", f.Content, "BOTTOMRIGHT", 0, 0, L["BROADCASTSETTINGS"]);
+  f.DKPModesMain.BroadcastSettings:SetSize(170, W.H)
+  W.StyleButton(f.DKPModesMain.BroadcastSettings, "primary")
+  f.DKPModesMain.BroadcastSettings:Show()
   f.DKPModesMain.BroadcastSettings:SetScript("OnClick", function()
     core.DB.modes.rolls.min = f.DKPModesMain.RollContainer.rollMin:GetNumber()
     core.DB.modes.rolls.max = f.DKPModesMain.RollContainer.rollMax:GetNumber()  
@@ -1204,14 +1139,8 @@ function CommDKP:DKPModes_Main()
         table.insert(temptable1, core.DB.raiders)
         CommDKP.Sync:SendData("CommDKPDKPModes", temptable1)
         CommDKP:Print(L["DKPMODESENTCONF"])
-        local temptable2 = {}
-              table.insert(temptable2, core.DB.MinBidBySlot)
-              table.insert(temptable2, CommDKP:FormatPriceTable())
-              CommDKP.Sync:SendData("CommDKPMinBid", temptable2)
-        local temptable3 = {}
-              table.insert(temptable3, core.DB.MaxBidBySlot)
-              table.insert(temptable3, CommDKP:GetTable(CommDKP_MaxBids, true))
-              CommDKP.Sync:SendData("CommDKPMaxBid", temptable3)
+        CommDKP.Sync:SendData("CommDKPMinBid", CommDKP:BuildBidBroadcastData("min"))   -- AD-36.1.1 (BR-28.1, CM-01)
+        CommDKP.Sync:SendData("CommDKPMaxBid", CommDKP:BuildBidBroadcastData("max"))
       end,
       timeout = 0,
       whileDead = true,
@@ -1229,4 +1158,106 @@ function CommDKP:DKPModes_Main()
   f.DKPModesMain.BroadcastSettings:SetScript("OnLeave", function()
     GameTooltip:Hide()
   end)
+
+  -- Pane height = the visible card stack (Mode card fitted to its caption + Cost + Bid, + Roll when shown,
+  -- with 8 px gaps); the region's rail covers any overflow. Recomputed on build, OnShow and every mode switch.
+  -- AD-21.2 (BR-14.1): the Mode card follows its caption's rendered height; the relative card chain
+  -- (Cost -> Mode BOTTOMLEFT -8, Bid -> Cost, Roll -> Bid) moves with it, and the pane height is the visible stack.
+  local MODE_MIN_H, MODE_CHROME_H, COST_H, BID_H, ROLL_H = 130, 90, 131, 161, 115   -- 90 = 77 caption top + 10 pad + 3 inset
+  local function LayoutModesMain()
+    local pane = f.DKPModesMain
+    local d = pane.ModeDescription
+    local hc = d and d.GetStringHeight and d:GetStringHeight() or 0
+    if not hc or hc < 1 then hc = 120 end                       -- fonts not laid out yet: assume 10 caption lines
+    local modeH = math.max(MODE_MIN_H, math.ceil(hc) + MODE_CHROME_H)
+    pane.ModeCard:SetHeight(modeH)
+    local h = modeH + W.GUT + COST_H + W.GUT + BID_H
+    if pane.RollContainer and pane.RollContainer:IsShown() then h = h + W.GUT + ROLL_H end
+    pane:SetHeight(h)
+    local sf = f.ScrollFrame
+    if sf and sf.UpdateRail and sf.GetScrollChild and sf:GetScrollChild() == pane then
+      local range = (sf.GetVerticalScrollRange and sf:GetVerticalScrollRange()) or 0
+      if (sf:GetVerticalScroll() or 0) > range then sf:SetVerticalScroll(range) end   -- shrink: no stale offset
+      sf:UpdateRail()
+    end
+  end
+  f.DKPModesMain.LayoutModesMain = LayoutModesMain               -- exposed for H116 and the Gate 2 probe
+  LayoutModesMain()
+  f.DKPModesMain:HookScript("OnShow", LayoutModesMain)
+
+  -- AD-35.6 (BR-27.7, G-27.9, G-27.10): read-only refresh of every Modes-tab control from core.DB.modes. Never calls a
+  -- control's SetValue / OnClick and never writes core.DB (AC-27.11). Visibility re-applies the BUILD-TIME rules
+  -- (:490-493, :534-537, :595-598, :655-681, :710-712, :737-739, :749-752, :1026-1031, :1098-1101) without their DB
+  -- normalisation writes, then the existing LayoutModesMain re-fits the card stack (Roll card on/off).
+  local function vis(o, on) if o then o:SetShown(on and true or false) end end
+  local function txt(box, v) if box then box:SetText(v ~= nil and tostring(v) or "") end end
+  function f.DKPModesMain.RefreshFromDB()
+    local p, m = f.DKPModesMain, core.DB.modes or {}
+    local r = type(m.rolls) == "table" and m.rolls or {}
+    local mode, zs, cv = m.mode, m.ZeroSumBidType, m.costvalue
+    local isMin, isStatic = mode == "Minimum Bid Values", mode == "Static Item Values"
+    local isRoll, isZS = mode == "Roll Based Bidding", mode == "Zero Sum"
+    DD:CloseDropDownMenus()                                          -- an open list would show stale checks
+    -- Mode card
+    CurMode = mode
+    LocalMode = (isMin and L["MINBIDVALUESHEAD"]) or (isStatic and L["STATICITEMVALUESHEAD"])
+      or (isRoll and L["ROLLBIDDINGHEAD"]) or (isZS and L["ZEROSUMHEAD"]) or nil
+    DD:UIDropDownMenu_SetText(p.ModesDropDown, LocalMode)
+    p.ModeDescriptionHeader:SetText(LocalMode or "")
+    p.ModeDescription:SetText((isMin and MinBidDescription) or (isStatic and StaticDescription)
+      or (isRoll and RollDescription) or (isZS and ZeroSumDescription) or "")
+    -- Cost card
+    DD:UIDropDownMenu_SetText(p.RoundDropDown, m.rounding)
+    DD:UIDropDownMenu_SetText(p.ItemCostDropDown, L[string.upper(cv or "Integer")])
+    LocalCostSel = (m.CostSelection == "First Bidder" and L["FIRSTBIDDER"])
+      or (m.CostSelection == "Second Bidder or Min" and L["SECONDBIDDERORMIN"]) or L["SECONDBIDDER"]
+    DD:UIDropDownMenu_SetText(p.CostSelection, LocalCostSel)
+    txt(p.Inflation, m.Inflation or 0)
+    -- Bid card (labels = the SetValue mappings, :305-311 and :559-578)
+    local mb = m.MaxBehavior
+    DD:UIDropDownMenu_SetText(p.MaxBidBehaviorDropDown, (mb == "Max DKP" and L["MAXBIDBEHAVIORMAXDKP"])
+      or (mb == "Max Item Value" and L["MAXBIDBEHAVIORMAXITEMVALUE"]) or L["MAXBIDBEHAVIORMIN"])
+    DD:UIDropDownMenu_SetText(p.ZeroSumType, zs == "Static" and L["STATIC"] or L["MINIMUMBID"])
+    DD:UIDropDownMenu_SetText(p.ChannelsDropDown, L["OPENCHANNELS"])  -- multi-select: checks read core.DB at open
+    txt(p.AntiSnipe, m.AntiSnipe)
+    p.SubZeroBidding:SetChecked(m.SubZeroBidding == true)
+    p.AllowNegativeBidders:SetChecked(m.AllowNegativeBidders == true)
+    -- Roll card
+    local rc = p.RollContainer
+    DD:UIDropDownMenu_SetText(rc.RollBiddingModeDropdown, m.RollMode or "Default")
+    txt(rc.rollMin, r.min); txt(rc.rollMax, r.max); txt(rc.AddMax, r.AddToMax); txt(rc.maxKarma, r.maxKarma)
+    rc.UsePerc:SetChecked(r.UsePerc == true)
+    vis(rc.rollMin.perc, r.UsePerc); vis(rc.rollMax.perc, r.UsePerc)
+    -- Visibility (build-time rules, no writes)
+    local zsStatic = isZS and zs == "Static"
+    vis(p.ItemCostDropDown, not (isMin or isZS)); vis(p.ItemCostHeader, not (isMin or isZS))
+    local maxBid = isMin or (isZS and zs ~= "Static")
+    vis(p.MaxBidBehaviorDropDown, maxBid); vis(p.MaxBidBehaviorHeader, maxBid)
+    local costSel = isMin or (isZS and zs == "Minimum Bid")
+    vis(p.CostSelection, costSel); vis(p.CostSelectionHeader, costSel)
+    vis(p.Inflation, isZS); vis(p.Inflation.Header, isZS)
+    vis(p.ZeroSumType, isZS); vis(p.ZeroSumTypeHeader, isZS)
+    local szHidden = cv == "Percent" or zsStatic
+    vis(p.SubZeroBidding, not szHidden)
+    vis(p.AllowNegativeBidders, not (szHidden or m.SubZeroBidding == false))
+    vis(rc, isRoll)
+    local karma = m.RollMode == "Ni Karma"
+    vis(rc.UsePerc, not karma); vis(rc.UsePerc.text, not karma); vis(rc.AddMax, not karma); vis(rc.AddMax.Header, not karma)
+    vis(rc.maxKarma, karma); vis(rc.maxKarma.Header, karma)
+    LayoutModesMain()                                                -- local call (keeps H116's static count at 1)
+  end
+end
+
+-- AD-36.1.1 (CDKP-028, BR-28.1 / CM-01): the ONE wire shape for CommDKPMinBid / CommDKPMaxBid, used by Modes ->
+-- Broadcast Settings AND Options -> Broadcast Min / Max Bids:
+--   { <MinBidBySlot | MaxBidBySlot>, { {teamIndex, <that team's CommDKP_MinBids | CommDKP_MaxBids table>}, ... } }
+-- one entry per team in core.DB.teams (MinBids = itemID-keyed map, MaxBids = array; AD-12.3, C-28.7).
+function CommDKP:BuildBidBroadcastData(kind)
+  local isMax = (kind == "max")
+  local teamTable = {}
+  for _, v in ipairs(CommDKP:GetGuildTeamList(true)) do
+    local teamIndex = tostring(v.index)
+    table.insert(teamTable, { teamIndex, CommDKP:GetTable(isMax and CommDKP_MaxBids or CommDKP_MinBids, true, teamIndex) })
+  end
+  return { isMax and core.DB.MaxBidBySlot or core.DB.MinBidBySlot, teamTable }
 end

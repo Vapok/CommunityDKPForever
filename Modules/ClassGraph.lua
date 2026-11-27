@@ -3,27 +3,22 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
 
--- UX §7.1: bar geometry shared by ClassGraph() and ClassGraph_Update(). 200 px keeps a 100% bar
--- (plus its % label) below the §7.3 divider at y = -192 on ConfigTab1.
-local BAR_MAX_HEIGHT = 200
+local W = CommDKP.Widgets
+
+-- Bar geometry shared by ClassGraph() and ClassGraph_Update(). UX §12.3.2: the graph lives in the 548 x 288
+-- Class Distribution card (260 px body), so a 100% bar (150) + icon + labels stays inside it.
+local BAR_MAX_HEIGHT = 150
 local BAR_WIDTH = 25
 
 function CommDKP:ClassGraph()
 
 	local graph;
+	local host = (CommDKP.ConfigTab1.GraphCard and CommDKP.ConfigTab1.GraphCard.Body) or CommDKP.ConfigTab1
 
-	graph = CreateFrame("Frame", "CommDKPClassIcons", CommDKP.ConfigTab1, "BackdropTemplate")
+	graph = CreateFrame("Frame", "CommDKPClassIcons", host, "BackdropTemplate")
 
-	graph:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 0, 0)
+	graph:SetAllPoints(host)
 	CommDKP:SetBackdropRole(graph, "Clear")
-	graph:SetSize(460, 495)
-
-	-- UX §7.3: subtle 1px gold divider between the filter checkboxes and the class graph.
-	graph.divider = CommDKP.ConfigTab1:CreateTexture(nil, "ARTWORK")
-	graph.divider:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 10, -192)
-	graph.divider:SetPoint("TOPRIGHT", CommDKP.ConfigTab1, "TOPRIGHT", -10, -192)
-	graph.divider:SetHeight(1)
-	graph.divider:SetColorTexture(1, 0.82, 0, 0.35)
 
 	local icons = {}
 	graph.icons = icons;
@@ -51,7 +46,7 @@ function CommDKP:ClassGraph()
 	for i=1, 9 do
 		graph.icons[i] = graph:CreateTexture(nil, "OVERLAY", nil);   -- Title Bar Texture
 		if i==1 then
-	  		graph.icons[i]:SetPoint("BOTTOMLEFT", graph, "BOTTOMLEFT", 74, 40);
+	  		graph.icons[i]:SetPoint("BOTTOMLEFT", graph, "BOTTOMLEFT", 85, 30);   -- 9 x 28 + 8 x 15 = 372 px, centered in the body
 		else
 			graph.icons[i]:SetPoint("LEFT", graph.icons[i-1], "RIGHT", 15, 0);
 		end
@@ -68,18 +63,13 @@ function CommDKP:ClassGraph()
 
   		local c = CommDKP:GetCColors(core.classes[i])
 		graph.icons[i].bar:SetBackdropColor(c.r, c.g, c.b, 1)	-- data color (class color; AD-6.3)
+		graph.icons[i].bar.Edges = CommDKP:CreatePixelBorder(graph.icons[i].bar, (core.Palette or core.Palettes.Forever).trimQuiet)
 
-		graph.icons[i].percentage = graph.icons[i].bar:CreateFontString(nil, "OVERLAY")
+		graph.icons[i].percentage = W.CreateText(graph.icons[i].bar, "body", CommDKP_round(perc[i] or 0, 1).."%", "CENTER")
 		graph.icons[i].percentage:SetPoint("BOTTOM", graph.icons[i].bar, "TOP", 0, 3)
-		graph.icons[i].percentage:SetFontObject("CommDKPSmallCenter")
-		graph.icons[i].percentage:SetText(CommDKP_round(perc[i] or 0, 1).."%")
-		graph.icons[i].percentage:SetTextColor(1, 1, 1, 1)
 
-		graph.icons[i].count = graph.icons[i].bar:CreateFontString(nil, "OVERLAY")
-		graph.icons[i].count:SetPoint("BOTTOM", graph.icons[i].bar, "BOTTOM", 0, -55)
-		graph.icons[i].count:SetFontObject("CommDKPSmallCenter")
-		graph.icons[i].count:SetText(classCount[i] or 0)
-		graph.icons[i].count:SetTextColor(1, 1, 1, 1)
+		graph.icons[i].count = W.CreateText(graph.icons[i].bar, "caption", classCount[i] or 0, "CENTER", "textMuted")
+		graph.icons[i].count:SetPoint("TOP", graph.icons[i], "BOTTOM", 0, -4)
 
 		local className = core.classes[i] or "nil";
 

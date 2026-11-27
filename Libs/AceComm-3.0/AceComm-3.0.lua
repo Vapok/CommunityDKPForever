@@ -87,7 +87,7 @@ local warnedPrefix=false
 -- @param distribution Addon channel, e.g. "RAID", "GUILD", etc; see SendAddonMessage API
 -- @param target Destination for some distributions; see SendAddonMessage API
 -- @param prio OPTIONAL: ChatThrottleLib priority, "BULK", "NORMAL" or "ALERT". Defaults to "NORMAL".
--- @param callbackFn OPTIONAL: callback function to be called as each chunk is sent. receives 3 args: the user supplied arg (see next), the number of bytes sent so far, and the number of bytes total to send.
+-- @param callbackFn OPTIONAL: callback function to be called as each chunk is sent. receives 3 args: the user supplied arg (see next), the number of bytes sent so far, and the number of bytes total to send. CommunityDKPForever (CDKP-022 / AD-30.1.6): plus 2 trailing args, didSend (true/false from ChatThrottleLib; nil on unpatched/collapsed paths) and the raw send result (Enum.SendAddonMessageResult value or legacy true/nil).
 -- @param callbackArg: OPTIONAL: first arg to the callback function. nil will be passed if not specified.
 function AceComm:SendCommMessage(prefix, text, distribution, target, prio, callbackFn, callbackArg)
 	prio = prio or "NORMAL"	-- pasta's reference implementation had different prio for singlepart and multipart, but that's a very bad idea since that can easily lead to out-of-sequence delivery!
@@ -106,9 +106,8 @@ function AceComm:SendCommMessage(prefix, text, distribution, target, prio, callb
 
 	local ctlCallback = nil
 	if callbackFn then
-		ctlCallback = function(sent)
-			return callbackFn(callbackArg, sent, textlen)
-		end
+		-- CommunityDKPForever (CDKP-022 / AD-30.1.6): forward CTL's didSend + raw send result
+		ctlCallback = function(sent, didSend, result) return callbackFn(callbackArg, sent, textlen, didSend, result) end
 	end
 
 	local forceMultipart

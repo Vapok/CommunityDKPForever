@@ -3,7 +3,7 @@
 ## Title: |cff9900ffCommunity|r |cff595959DKP|r |cffffd100Forever|r
 ## Author: Vapok-BloodsailBuccaneers
 ## Notes: Feature-rich DKP Management Tool
-## Version: 3.2.9
+## Version: 1.0.0
 ## DefaultState: enabled
 ## SavedVariables: CommDKP_DB, CommDKP_Loot, CommDKP_DKPTable, CommDKP_DKPHistory, CommDKP_MinBids, CommDKP_MaxBids, CommDKP_Whitelist, CommDKP_Standby, CommDKP_Archive, CommDKP_Profiles
 
@@ -20,6 +20,8 @@ Localization/Localization.tw.lua
 Localization/Fallback.lua
 embeds.xml
 Core.lua
+Modules/UI/Widgets.lua
+Modules/UI/MinimapButton.lua
 Modules/Sync.lua
 Modules/comm.lua
 Modules/CommGate.lua

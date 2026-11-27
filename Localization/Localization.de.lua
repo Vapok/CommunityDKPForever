@@ -3,39 +3,16 @@ if GetLocale() == "deDE" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "Lucifron", "Magmadar", "Gehennas",
-      "Garr", "Baron Geddon", "Shazzrah", "Sulfuronherold", 
-      "Golemagg der Verbrenner", "Majordomus Executus", "Ragnaros",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "Feuerkralle der Ungezähmte", "Vaelastrasz der Verdorbene", "Brutwächter Dreschbringer",
-      "Firemaw", "Ebonroc", "Flamegor", "Chromaggus", 
-      "Nefarian",
-    },
-    AQ = {
-      "Der Prophet Skeram", "Schlachtwache Sartura", "Fankriss der Unnachgiebige",
-      "Prinzessin Huhuran", "Twin Emperors", "C'Thun", 
-      "Adel der Silithiden", "Viscidus", "Ouro",
-    },
-    NAXX = {
-      "Anub'Rekhan", "Großwitwe Faerlina", "Maexxna",
-      "Noth der Seuchenfürst", "Heigan der Unreine", "Loatheb", 
-      "Instrukteur Razuvious", "Gothik der Ernter", "Die vier Reiter",
-      "Flickwerk", "Grobbulus", "Gluth", "Thaddius",
-      "Saphiron", "Kel'Thuzad",
-    },
-    ZG = {
-      "Blutfürst Mandokir", "Gahz'ranka", "Hakkar", "Hohepriester Thekal", "Hohepriester Venoxis", "Hohepriesterin Arlokk",
-      "Hohepriesterin Jeklik", "Jin'do der Verhexer", "Hohepriesterin Mar'li", "Edge of Madness",
-    },
-    AQ20 = {
-      "Ayamiss der Jäger", "Buru der Verschlinger", "General Rajaxx", "Kurinnaxx", "Moam", "Ossirian der Narbenlose",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"Onyxia"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "Balnazzar", "Beatrix", "Bestienmeister", "Solistrasza", "Mason", "Wiedergeborener Rat", "Lilian Voss", "Caldoran",
-    },
     WORLD = {
       "Azuregos", "Lord Kazzak", "Smariss", "Lethon", "Ysondre", "Taerar",
       "Prinz Donneraan",  -- 3079 (AD-12.2)
@@ -43,15 +20,10 @@ if GetLocale() == "deDE" then
   }
 
   core.ZoneList = {
-    "Geschmolzener Kern", 
-    "Pechschwingenhort", 
-    "Tempel von Ahn'Qiraj", 
-    "Naxxramas", 
-    "Zul'Gurub", 
-    "Ruinen von Ahn'Qiraj", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "Onyxias Versteck", 
     "Weltbosse",
-    "Scharlachrote Enklave",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -417,6 +389,7 @@ if GetLocale() == "deDE" then
     LOOTHISTUPDATEPROG = "Aktualisierung der Beute-Historie läuft",
     MAINGUISIZE = "Haupt-GUI-Größe",
     MANAGE = "Verwalten",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "Stamm-Raider-Liste verwalten",
     MANAGEDKP = "DKP-Einträge verwalten",
     MANAGELISTS = "Listen verwalten",
@@ -503,6 +476,7 @@ if GetLocale() == "deDE" then
     NORANKSELECTED = "Es ist kein Rang ausgewählt.",
     NOROLEDETECTED = "Keine Rolle erkannt",
     NOSPECREPORTED = "Keine Spezifikation angegeben",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "ist kein Offizier. Du kannst nur Ränge hinzufügen, die in den Einstellungen der Gilde die Berechtigung \"Offiziersnotiz bearbeiten\" haben.",
     NOTETOOLONG = "Die öffentliche Notiz der Gildenanführer war zu lang. Verkürzte Notiz passend zum DKP-Tabellen-Zeitstempel. (Maximal 31 Zeichen)",
     NOTIFICATIONSLIKETHIS = "Benachrichtigungen wie diese sind jetzt",
@@ -700,6 +674,7 @@ if GetLocale() == "deDE" then
     TABLEQUERYSENT = "DKP-Tabellenstatus der Gilde abfragen",
     TABLEQUERYUTD = "Auf dem Laufenden",
     TABLESAREEMPTY = "Ihre Tabellen sind derzeit leer.",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "Tabellenansichten",
     TAKINGBIDSON = "Gebote annehmen",
     TANK = "Tank",

@@ -39,7 +39,11 @@ function CommDKP:ValidateSender(sender)                -- returns true if "sende
     return false;
   else
     if rankIndex then
-      return C_GuildInfo.GuildControlGetRankFlags(rankIndex)[12]    -- returns true/false if player can write to officer notes
+      local ok, flags = pcall(function() return C_GuildInfo and C_GuildInfo.GuildControlGetRankFlags and C_GuildInfo.GuildControlGetRankFlags(rankIndex) end)
+      if ok and type(flags) == "table" and flags[12] ~= nil then
+        return flags[12] and true or false
+      end
+      return false                     -- AD-34.4 (G-26.5): unresolvable rank flags fail closed (BR-26.3)
     else
       return false;
     end
@@ -100,15 +104,28 @@ end
 
 -- main functions that receives all communication via appropriate channels
 function CommDKP.Sync:OnCommReceived(prefix, message, distribution, sender)
-  
-  if not core.Initialized or core.IsOfficer == nil then 
+
+  local isMetaPrefix = (prefix == "CDKProfileSend" or prefix == "CommDKPTalents" or prefix == "CommDKPRoles")
+  if (isMetaPrefix and not core.DB) or (not isMetaPrefix and (not core.Initialized or core.IsOfficer == nil)) then
+    -- AD-30.1.7 (BR-22.1): G1 drop is visible in the session-only comm trace. Meta prefixes only require core.DB.
+    if core.CommTrace and (isMetaPrefix or prefix == "CommDKPSeed") then
+      CommDKP:CommTrace("RECV %s from=%s DROPPED (initialized=%s officer=%s)", tostring(prefix), tostring(sender), tostring(core.Initialized), tostring(core.IsOfficer))
+    end
     return; 
   end
 
   if prefix then
     if CommDKP:IsSelf(sender) then core.LastSelfEchoSender = sender end  -- AD-10.9: /dkp test telemetry
     local decoded = LibDeflate:DecodeForWoWAddonChannel(message);
-    local decompressed = LibDeflate:DecompressDeflate(decoded);
+    local decompressed = decoded and LibDeflate:DecompressDeflate(decoded) or nil;
+    if decompressed == nil then
+      local pDecoded = LibDeflate:DecodeForPrint(message)
+      if pDecoded then decompressed = LibDeflate:DecompressDeflate(pDecoded) end
+    end
+    if decompressed == nil then
+      local cDecoded = LibDeflate:DecodeForWoWChatChannel(message)
+      if cDecoded then decompressed = LibDeflate:DecompressDeflate(cDecoded) end
+    end
 
     
     if decompressed == nil then  -- this checks if message was previously encoded and compressed
@@ -158,24 +175,28 @@ function CommDKP.Sync:OnCommReceived(prefix, message, distribution, sender)
       elseif prefix == "CommDKPBidder" then
         CommDKP:BidderReceived(_objReceived, sender, distribution);
         return;
-      elseif prefix == "CommDKPTeams" then
-        CommDKP:TeamsReceived(_objReceived, sender);
-        return;
       elseif prefix == "CDKProfileSend" then
-        CommDKP:ProfileReceived(_objReceived, sender);
-        return;
-      elseif prefix == "CommDKPCurTeam" then
-        CommDKP:CurTeamReceived(_objReceived, sender);
+        CommDKP:ProfileReceived(_objReceived, sender, distribution);   -- AD-30.1.7
         return;
       elseif prefix == "CommDKPTalents" then
-        CommDKP:TalentsReceived(_objReceived, sender);
+        CommDKP:TalentsReceived(_objReceived, sender, distribution);   -- AD-30.1.7
         return;
       elseif prefix == "CommDKPRoles" then
-        CommDKP:RolesReceived(_objReceived, sender);
+        CommDKP:RolesReceived(_objReceived, sender, distribution);   -- AD-30.1.7
         return;
       elseif prefix == "CommDKPBuild" then
         CommDKP:BuildReceived(_objReceived, sender);
         return;
+      end
+
+      -- AD-36.5.2 (BR-28.13, CM-08): the team list and the current team are officer data (G4): validated, non-self only.
+      if prefix == "CommDKPTeams" or prefix == "CommDKPCurTeam" then
+        if not CommDKP:IsSelf(sender) and CommDKP:ValidateSender(sender) then
+          if prefix == "CommDKPTeams" then CommDKP:TeamsReceived(_objReceived, sender) else CommDKP:CurTeamReceived(_objReceived, sender) end
+        elseif core.CommTrace then
+          CommDKP:CommTrace("RECV %s from=%s DROPPED (G4: not a validated officer, or self)", tostring(prefix), tostring(sender))
+        end
+        return
       end
 
       ---
@@ -202,7 +223,7 @@ function CommDKP.Sync:OnCommReceived(prefix, message, distribution, sender)
             CommDKP:AllTabsReceived(_objReceived, sender);
             return;
           elseif prefix == "CommDKPMerge" then
-            CommDKP:MergeReceived(_objReceived);
+            CommDKP:MergeReceived(_objReceived, distribution, sender);
             return;
           elseif prefix == "CommDKPLootDist" then
             CommDKP:LootDistReceived(_objReceived);
@@ -315,24 +336,35 @@ function CommDKP.Sync:SendData(prefix, data, target, targetTeam, prio)
   -- serialized text, so stamp the team key for the duration of this synchronous dispatch.
   -- Cleared on every exit (early returns inside Dispatch, and errors via pcall + rethrow).
   local function Dispatch()
+  -- AD-26.5.2 (BR-18.7): own spec / role / version reach the guild, or the group when guildless. Solo + guildless: silent.
+  if prefix == "CommDKPTalents" or prefix == "CommDKPRoles" or prefix == "CDKProfileSend" then
+    local ch = IsInGuild() and "GUILD" or CommDKP:GetGroupCommChannel(false)
+    if not ch then
+      CommDKP:RecordMetaSend(prefix, "none", "NoChannel")                        -- AD-30.1.7: was a silent return
+      return
+    end
+    -- AD-30.1.4 (BR-22.2): per-message context as the AceComm callback (final result, GUILD -> group fallback)
+    local ctx = { prefix = prefix, channel = ch, text = _compressedObj, fallback = false }
+    local cb = function(c, sent, total, didSend, result) CommDKP:OnMetaSendResult(c, sent, total, didSend, result) end
+    if prefix == "CommDKPTalents" then CommDKP:TalentsSend(prefix, _compressedObj, ch, cb, ctx)
+    elseif prefix == "CommDKPRoles" then CommDKP:RolesSend(prefix, _compressedObj, ch, cb, ctx)
+    else CommDKP:ProfileSend(prefix, _compressedObj, ch, cb, ctx) end
+    return
+  end
   if IsInGuild() then
     if prefix == "CommDKPQuery" then
       CommDKP:QuerySend(prefix, _compressedObj, "GUILD");
-      return;
-    elseif prefix == "CommDKPTalents" then
-      CommDKP:TalentsSend(prefix, _compressedObj, "GUILD");
-      return;
-    elseif prefix == "CommDKPRoles" then
-      CommDKP:RolesSend(prefix, _compressedObj, "GUILD");
-      return;
-    elseif prefix == "CDKProfileSend" then
-      CommDKP:ProfileSend(prefix, _compressedObj, "GUILD");
       return;
     elseif prefix == "CommDKPBidder" then -- bid submissions. AD-14.1: group-relative
       CommDKP:BidderSend(prefix, _compressedObj, "RAID");
       return;
     elseif prefix == "CommDKPBuild" then
       CommDKP:BuildSend(prefix, _compressedObj, "GUILD");
+      return;
+    elseif prefix == "CommDKPSeed" then
+      local seedCtx = { prefix = "CommDKPSeed", channel = "GUILD", fallback = true }
+      CommDKP.Sync:SendCommMessage(prefix, _compressedObj, "GUILD", nil, "NORMAL",
+        function(c, sent, total, didSend, result) CommDKP:OnMetaSendResult(c, sent, total, didSend, result) end, seedCtx)
       return;
     end
 
@@ -390,7 +422,7 @@ function CommDKP.Sync:SendData(prefix, data, target, targetTeam, prio)
       
       -- what is being sent here?
       if target then
-        CommDKP.Sync:SendCommMessage(prefix, _compressedObj, "WHISPER", target)
+        CommDKP.Sync:SendCommMessage(prefix, CommDKP.Sync:ToPrintSafePacket(_compressedObj), "WHISPER", target)   -- AD-36.6.3 (BR-28.20)
       else
         CommDKP.Sync:SendCommMessage(prefix, _compressedObj, "GUILD")
       end
@@ -409,7 +441,16 @@ function CommDKP.Sync:SendData(prefix, data, target, targetTeam, prio)
 end
 
 
-function CommDKP.Sync:SerializeTableToString(data) 
+-- AD-34.2 (G-26.2, B6b): print-safe (6-bit) form of ONE addon-channel packet. Pure; no shared state.
+-- Non-string input (headless sandboxes pass tables) or any decode failure returns the packet unchanged.
+function CommDKP.Sync:ToPrintSafePacket(packet)
+  if type(packet) ~= "string" then return packet end
+  local raw = LibDeflate:DecodeForWoWAddonChannel(packet)
+  if type(raw) ~= "string" then return packet end
+  return LibDeflate:EncodeForPrint(raw) or packet
+end
+
+function CommDKP.Sync:SerializeTableToString(data)
 
   local serialized = nil;
   local packet = nil;
@@ -455,7 +496,8 @@ function CommDKP:AllTabsSend(prefix, commObject, channel)
 
   if channel then -- check if we are targeting specific player
     print("[CommunityDKP] COMMS: You started Full Broadcast for team "..CommDKP:GetTeamName(CommDKP:GetCurrentTeamIndex()).." to player "..channel);
-    CommDKP.Sync:SendCommMessage(prefix, commObject, "WHISPER", channel, "NORMAL", CommDKP_BroadcastFull_Callback, channel);
+    local wPacket = CommDKP.Sync:ToPrintSafePacket(commObject)   -- AD-34.2 (G-26.2)
+    CommDKP.Sync:SendCommMessage(prefix, wPacket, "WHISPER", channel, "NORMAL", CommDKP_BroadcastFull_Callback, channel);
   else
     CommDKP.Sync:SendData("CommDKPPreBroad", prefix, nil);
     CommDKP.Sync:SendCommMessage(prefix, commObject, _channel, nil, "NORMAL", CommDKP_BroadcastFull_Callback, _channel);
@@ -479,6 +521,35 @@ function CommDKP:AllTabsReceived(commObject, sender)   -- AD-15.5(a)
       }
     --]]
 
+  -- AD-30.1.3(b): what this broadcast says about MY row, captured before anything is sorted or overwritten.
+  if not CommDKP:IsSelf(sender) then core.LastOfficerSender = sender end
+  local selfState = CommDKP:IncomingSelfMetaState(commObject.Data and commObject.Data.DKPTable)
+  core.LastBroadcastSelfMeta = { state = selfState, kind = "full", from = CommDKP:NormalizeName(sender), t = GetTime() }
+  if type(commObject.Data) == "table" and type(commObject.Data.DKPTable) == "table" then
+    local curRows = CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)
+    local curProfs = CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)
+    local harvested = false
+    for i = 1, #commObject.Data.DKPTable do
+      local src = commObject.Data.DKPTable[i]
+      if type(src) == "table" and type(src.player) == "string" and src.player ~= "" and not CommDKP:IsSelf(src.player) then
+        CommDKP:CachePlayerMeta(src.player, { spec = src.spec, roleData = not CommDKP:IsPlaceholderMeta("role", src.role) and src.spec or nil, version = src.version, class = src.class }, true)   -- AD-34.6: relayed = fill-only
+        local hit = CommDKP:Table_Search(curRows, src.player, "player")
+        if hit then
+          local row = curRows[hit[1][1]]
+          if CommDKP:IsPlaceholderMeta("spec", row.spec) and not CommDKP:IsPlaceholderMeta("spec", src.spec) then row.spec = src.spec; harvested = true end
+          if CommDKP:IsPlaceholderMeta("role", row.role) and not CommDKP:IsPlaceholderMeta("role", src.role) then row.role = src.role; harvested = true end
+          if CommDKP:IsPlaceholderMeta("version", row.version) and not CommDKP:IsPlaceholderMeta("version", src.version) then row.version = src.version; harvested = true end
+          if type(curProfs[src.player]) ~= "table" then curProfs[src.player] = CommDKP:GetDefaultEntity() end
+          curProfs[src.player].player = src.player
+          curProfs[src.player].spec = row.spec
+          curProfs[src.player].role = row.role
+          curProfs[src.player].version = row.version
+        end
+      end
+    end
+    if harvested then CommDKP:FilterDKPTable(core.currentSort, "reset") end
+  end
+
   table.sort(commObject.Data.Loot, function(a, b)
     return a["date"] > b["date"]
   end)
@@ -497,25 +568,49 @@ function CommDKP:AllTabsReceived(commObject, sender)   -- AD-15.5(a)
     end)
   end
 
-  if (#CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam) > 0 and #CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam) > 0) and 
-    (
-      commObject.Data.DKP[1].date < CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam)[1].date or 
-      commObject.Data.Loot[1].date < CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam)[1].date
+  -- AD-36.2.3 (BR-28.5, CM-11): an EMPTY incoming DKP / Loot array is "not newer" (it has no [1]); only non-empty ones
+  -- are compared. The local "both non-empty" requirement is unchanged.
+  local inDKP, inLoot = commObject.Data.DKP, commObject.Data.Loot
+  local myDKP = CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam)
+  local myLoot = CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam)
+  if (#myDKP > 0 and #myLoot > 0) and (
+      (#inDKP > 0 and inDKP[1].date < myDKP[1].date) or
+      (#inLoot > 0 and inLoot[1].date < myLoot[1].date)
     ) then
 
-    local entry1 = "Loot: "..commObject.Data.Loot[1].loot.." |cff616ccf"..L["WONBY"].." "..commObject.Data.Loot[1].player.." ("..date("%b %d @ %H:%M:%S", commObject.Data.Loot[1].date)..") by "..(CommDKP:StripRealm(commObject.Data.Loot[1].index) or "?").."|r"  -- AD-9.6: officer from "Name-<timestamp>"
-    local entry2 = "DKP: |cff616ccf"..commObject.Data.DKP[1].reason.." ("..date("%b %d @ %H:%M:%S", commObject.Data.DKP[1].date)..") - "..(CommDKP:StripRealm(commObject.Data.DKP[1].index) or "?").."|r"
+    local entry1 = (#inLoot > 0) and ("Loot: "..inLoot[1].loot.." |cff616ccf"..L["WONBY"].." "..inLoot[1].player.." ("..date("%b %d @ %H:%M:%S", inLoot[1].date)..") by "..(CommDKP:StripRealm(inLoot[1].index) or "?").."|r") or ""  -- AD-9.6
+    local entry2 = (#inDKP > 0) and ("DKP: |cff616ccf"..inDKP[1].reason.." ("..date("%b %d @ %H:%M:%S", inDKP[1].date)..") - "..(CommDKP:StripRealm(inDKP[1].index) or "?").."|r") or ""
 
     StaticPopupDialogs["FULL_TABS_ALERT"] = {
       text = "|CFFFF0000"..L["WARNING"].."|r: "..string.format(L["NEWERTABS1"], CommDKP:NormalizeName(sender) or "?").."\n\n"..entry1.."\n\n"..entry2.."\n\n"..L["NEWERTABS2"],
       button1 = L["YES"],
       button2 = L["NO"],
       OnAccept = function()
+        local follow = tostring(commObject.CurrentTeam) == tostring(CommDKP:GetCurrentTeamIndex())               -- AD-36.5.5 (a)
+          or #CommDKP:GetTable(CommDKP_DKPTable, true, CommDKP:GetCurrentTeamIndex()) == 0                          -- (b), before replacement
+        local metaIndex = CommDKP:BuildKnownMetaIndex()   -- AD-26.4.3: pre-overwrite snapshot
+        if type(commObject.Data.DKPTable) == "table" then
+          for i = 1, #commObject.Data.DKPTable do
+            local r = commObject.Data.DKPTable[i]
+            if type(r) == "table" and type(r.player) == "string" and not CommDKP:IsSelf(r.player) then
+              CommDKP:CachePlayerMeta(r.player, { spec = r.spec, roleData = not CommDKP:IsPlaceholderMeta("role", r.role) and r.spec or nil, version = r.version, class = r.class }, true)   -- AD-34.6: relayed = fill-only
+            end
+          end
+        end
         CommDKP:SetTable(CommDKP_DKPTable, true, commObject.Data.DKPTable, commObject.CurrentTeam);
+        CommDKP:RestoreKnownPlayerMeta(commObject.CurrentTeam, metaIndex)
+        for i = 1, #commObject.Data.DKPTable do
+          local r = commObject.Data.DKPTable[i]
+          if type(r) == "table" and type(r.player) == "string" and r.player ~= "" then
+            CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)[r.player] = r
+          end
+        end
         CommDKP:SetTable(CommDKP_DKPHistory, true, commObject.Data.DKP, commObject.CurrentTeam);
         CommDKP:SetTable(CommDKP_Loot, true, commObject.Data.Loot, commObject.CurrentTeam);
+        CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam).seed = 0   -- AD-36.3.2 (BR-28.9b): same as the no-popup branch;
+        CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam).seed = 0         -- also drops an older client's serialized .seed
         CommDKP:SetTable(CommDKP_Archive, true, commObject.Data.Archive, commObject.CurrentTeam);
-        
+
         local minBidTable = CommDKP:FormatPriceTable(commObject.Data.MinBids, true);
         local newMinBidTable = {}
         for i=1, #minBidTable do
@@ -531,7 +626,7 @@ function CommDKP:AllTabsReceived(commObject, sender)   -- AD-15.5(a)
         CommDKP:SetTable(CommDKP_MinBids, true, newMinBidTable, commObject.CurrentTeam);
         core.DB["teams"] = commObject.Teams;
 
-        CommDKP:SetCurrentTeam(commObject.CurrentTeam)
+        if follow then CommDKP:SetCurrentTeam(commObject.CurrentTeam) end   -- AD-36.5.5 (BR-28.16): team-scoped
         
         CommDKP:FilterDKPTable(core.currentSort, "reset")
         CommDKP:StatusVerify_Update()
@@ -543,9 +638,30 @@ function CommDKP:AllTabsReceived(commObject, sender)   -- AD-15.5(a)
     }
     StaticPopup_Show ("FULL_TABS_ALERT")
   else
+    local follow = tostring(commObject.CurrentTeam) == tostring(CommDKP:GetCurrentTeamIndex())               -- AD-36.5.5 (a)
+      or #CommDKP:GetTable(CommDKP_DKPTable, true, CommDKP:GetCurrentTeamIndex()) == 0                          -- (b), before replacement
+    local metaIndex = CommDKP:BuildKnownMetaIndex()   -- AD-26.4.3: pre-overwrite snapshot
+    if type(commObject.Data.DKPTable) == "table" then
+      for i = 1, #commObject.Data.DKPTable do
+        local r = commObject.Data.DKPTable[i]
+        if type(r) == "table" and type(r.player) == "string" and not CommDKP:IsSelf(r.player) then
+          CommDKP:CachePlayerMeta(r.player, { spec = r.spec, roleData = not CommDKP:IsPlaceholderMeta("role", r.role) and r.spec or nil, version = r.version, class = r.class }, true)   -- AD-34.6: relayed = fill-only
+        end
+      end
+    end
     CommDKP:SetTable(CommDKP_DKPTable, true, commObject.Data.DKPTable, commObject.CurrentTeam);
+    CommDKP:RestoreKnownPlayerMeta(commObject.CurrentTeam, metaIndex)
+    for i = 1, #commObject.Data.DKPTable do
+      local r = commObject.Data.DKPTable[i]
+      if type(r) == "table" and type(r.player) == "string" and r.player ~= "" then
+        CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)[r.player] = r
+      end
+    end
     CommDKP:SetTable(CommDKP_DKPHistory, true, commObject.Data.DKP, commObject.CurrentTeam);
     CommDKP:SetTable(CommDKP_Loot, true, commObject.Data.Loot, commObject.CurrentTeam);
+    -- reset seeds since this is a fullbroadcast (AD-36.5.5: moved up, matching AD-36.3.2, so seed is 0 before any StatusVerify_Update)
+    CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam).seed = 0 
+    CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam).seed = 0
     CommDKP:SetTable(CommDKP_Archive, true, commObject.Data.Archive, commObject.CurrentTeam);
 
     local minBidTable = CommDKP:FormatPriceTable(commObject.Data.MinBids, true);
@@ -563,15 +679,15 @@ function CommDKP:AllTabsReceived(commObject, sender)   -- AD-15.5(a)
     CommDKP:SetTable(CommDKP_MinBids, true, newMinBidTable, commObject.CurrentTeam);
 
     core.DB["teams"] = commObject.Teams;
-    CommDKP:SetCurrentTeam(commObject.CurrentTeam)
-    -- reset seeds since this is a fullbroadcast   
-    CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam).seed = 0 
-    CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam).seed = 0
+    if follow then CommDKP:SetCurrentTeam(commObject.CurrentTeam) end   -- AD-36.5.5 (BR-28.16): team-scoped
     CommDKP:FilterDKPTable(core.currentSort, "reset");
     CommDKP:StatusVerify_Update();
   end
   
   print("[CommunityDKP] COMMS: Full broadcast receive finished for team "..CommDKP:GetTeamName(commObject.CurrentTeam));
+  -- AD-30.1.3(b) (F-7): outside the popup branch, so it also runs when the user declines.
+  CommDKP:QueueTalentSend("broadcast")
+  CommDKP:CommTrace("RECV CommDKPAllTabs from=%s: officer copy of my meta=%s -> re-send queued", tostring(sender), selfState)
 end
 
 
@@ -585,7 +701,8 @@ function CommDKP:MergeSend(prefix, commObject, channel)
 
   if channel then -- check if we are targeting specific player
     print("[CommunityDKP] COMMS: You started 2-week broadcast for team "..CommDKP:GetTeamName(CommDKP:GetCurrentTeamIndex()).." to player "..channel);
-    CommDKP.Sync:SendCommMessage(prefix, commObject, "WHISPER", channel, "NORMAL", CommDKP_BroadcastFull_Callback, channel);
+    local wPacket = CommDKP.Sync:ToPrintSafePacket(commObject)   -- AD-34.2 (G-26.2)
+    CommDKP.Sync:SendCommMessage(prefix, wPacket, "WHISPER", channel, "NORMAL", CommDKP_BroadcastFull_Callback, channel);
   else
     CommDKP.Sync:SendData("CommDKPPreBroad", prefix, nil);
     CommDKP.Sync:SendCommMessage(prefix, commObject, _channel, nil, "NORMAL", CommDKP_BroadcastFull_Callback, _channel);
@@ -593,7 +710,13 @@ function CommDKP:MergeSend(prefix, commObject, channel)
 end
 
 
-function CommDKP:MergeReceived(commObject, channel, sender)
+function CommDKP:MergeReceived(commObject, channel, who)
+  if type(who) == "string" and who ~= "" and not CommDKP:IsSelf(who) then
+    core.LastOfficerSender = who
+  end
+  -- AD-30.1.3(c): what this merge says about MY row (no sender is passed to this handler).
+  local selfState = CommDKP:IncomingSelfMetaState(commObject.Data and commObject.Data.Profiles)
+  core.LastBroadcastSelfMeta = { state = selfState, kind = "merge", from = nil, t = GetTime() }
   for i=1, #commObject.Data.DKP do
     local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam), commObject.Data.DKP[i].index, "index")
 
@@ -697,6 +820,7 @@ function CommDKP:MergeReceived(commObject, channel, sender)
     end
   end
 
+  local metaIndex = CommDKP:BuildKnownMetaIndex()   -- AD-26.4.3: snapshot before rows are created
   for i=1, #commObject.Data.Profiles do
 
     local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam), commObject.Data.Profiles[i].player, "player")
@@ -705,15 +829,60 @@ function CommDKP:MergeReceived(commObject, channel, sender)
       if CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]].class == "NONE" then
         CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]].class = commObject.Data.Profiles[i].class
       end
+      local row, src = CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]], commObject.Data.Profiles[i]
+      if not CommDKP:IsSelf(row.player) then                                   -- AD-30.1.3(c): placeholder-only fill
+        if CommDKP:IsPlaceholderMeta("spec", row.spec) and not CommDKP:IsPlaceholderMeta("spec", src.spec) then row.spec = src.spec end
+        if CommDKP:IsPlaceholderMeta("role", row.role) and not CommDKP:IsPlaceholderMeta("role", src.role) then row.role = src.role end
+        if CommDKP:IsPlaceholderMeta("version", row.version) and not CommDKP:IsPlaceholderMeta("version", src.version) then row.version = src.version end
+        CommDKP:CachePlayerMeta(row.player, { spec = row.spec, roleData = not CommDKP:IsPlaceholderMeta("role", row.role) and row.spec or nil, version = row.version, class = row.class }, true)   -- AD-34.6: relayed = fill-only
+        local profs = CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)
+        if type(profs[row.player]) ~= "table" then profs[row.player] = CommDKP:GetDefaultEntity() end
+        profs[row.player].player = row.player
+        profs[row.player].spec = row.spec
+        profs[row.player].role = row.role
+        profs[row.player].version = row.version
+      end
     else
-      tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam),commObject.Data.Profiles[i])
+      local p = commObject.Data.Profiles[i]
+      if type(p) == "table" and type(p.player) == "string" and not CommDKP:IsSelf(p.player) then
+        CommDKP:CachePlayerMeta(p.player, { spec = p.spec, roleData = not CommDKP:IsPlaceholderMeta("role", p.role) and p.spec or nil, version = p.version, class = p.class }, true)   -- AD-34.6: relayed = fill-only
+      end
+      CommDKP:HydratePlayerRow(p, metaIndex)   -- AD-26.4.3
+      tinsert(CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam), p)
+      if type(p) == "table" and type(p.player) == "string" and p.player ~= "" then
+        CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)[p.player] = p
+      end
     end
   end
 
+  -- AD-36.2.4 (BR-28.6, CM-12): newest first for the MERGED team, UI open or not, current team or not. table.sort only
+  -- touches the array part, so .seed survives. nil / non-numeric dates sort last; ties keep any order (G-28.6).
+  local function newestFirst(a, b) return (tonumber(a and a.date) or -1) > (tonumber(b and b.date) or -1) end
+  table.sort(CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam), newestFirst)
+  table.sort(CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam), newestFirst)
+  -- AD-36.3.3 (BR-28.10, CM-04): an ORPHANED seed is cleared after a merge (G4 already validated the sender; guild or
+  -- WHISPER). Orphaned = non-zero AND still not found AND (malformed per R-SEED, OR not newer than the newest entry this
+  -- sender merged for that table). A seed newer than everything merged is kept (another officer may own it).
+  for _, pair in ipairs({ { CommDKP_DKPHistory, commObject.Data.DKP }, { CommDKP_Loot, commObject.Data.Loot } }) do
+    local tbl = CommDKP:GetTable(pair[1], true, commObject.CurrentTeam)
+    local seed = tbl.seed
+    if seed ~= nil and seed ~= 0 and not (type(seed) == "string" and CommDKP:Table_Search(tbl, seed, "index")) then
+      local seedDate
+      if type(seed) == "string" then local _, d = strsplit("-", seed); seedDate = tonumber(d) end   -- R-SEED (D-36.4)
+      local newest
+      for i = 1, #pair[2] do
+        local d = type(pair[2][i]) == "table" and tonumber(pair[2][i].date) or nil
+        if d and (not newest or d > newest) then newest = d end
+      end
+      if seedDate == nil or (newest ~= nil and seedDate <= newest) then tbl.seed = 0 end   -- G-28.5: no payload date -> (i) only
+    end
+  end
   CommDKP:LootHistory_Reset()
   CommDKP:LootHistory_Update(L["NOFILTER"])
   CommDKP:FilterDKPTable(core.currentSort, "reset")
   CommDKP:StatusVerify_Update()
+  CommDKP:QueueTalentSend("broadcast")   -- AD-26.4.3 / AD-26.5.1 (b)
+  CommDKP:CommTrace("RECV CommDKPMerge from=?: officer copy of my meta=%s -> re-send queued", selfState)   -- AD-30.1.3(c)
   return
 end
 
@@ -762,138 +931,122 @@ end
 -- CommDKPTalents message HANDLERS
 ----------
 
-function CommDKP:TalentsSend(prefix, commObject, channel)
+function CommDKP:TalentsSend(prefix, commObject, channel, cb, cbArg)   -- AD-30.1.4: optional AceComm callback
   local _channel = channel or "GUILD";
   local _prefix = prefix or "CommDKPTalents";
-  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel);
+  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel, nil, "NORMAL", cb, cbArg);
 end
 
 
-function CommDKP:TalentsReceived(commObject, sender)
-  sender = CommDKP:ResolveRosterName(sender) or CommDKP:NormalizeName(sender) or sender   -- AD-15.2
-  for teamIndex,team in pairs(commObject.Teams) do
-    local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex), sender, "player")
-
-    if search then
-      local curSelection = CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex)[search[1][1]]
-      curSelection.spec = commObject.Data;
-      
-      if CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender] == nil then
-        CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender] = CommDKP:GetDefaultEntity();
-      end
-
-      CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender].spec = commObject.Data;
-    end
-    
-  end
-
-  return
+function CommDKP:TalentsReceived(commObject, sender, distribution)   -- AD-26.4.1 + AD-30.1.7
+  if type(commObject) ~= "table" then return end
+  local name = CommDKP:ResolveSenderName(sender)                       -- AD-26.2.7 (F4); superset of AD-15.2
+  local _, n = CommDKP:ApplyReportedPlayerMeta(name, { spec = commObject.Data }, commObject.Teams)
+  CommDKP:RecordMetaRecv("CommDKPTalents", sender, name, n, distribution)
 end
 
 ----------
 -- CommDKPRoles message HANDLERS
 ----------
 
-function CommDKP:RolesSend(prefix, commObject, channel)
+function CommDKP:RolesSend(prefix, commObject, channel, cb, cbArg)   -- AD-30.1.4: optional AceComm callback
   local _channel = channel or "GUILD";
   local _prefix = prefix or "CommDKPRoles";
-  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel);
+  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel, nil, "NORMAL", cb, cbArg);
 end
 
-
-function CommDKP:RolesReceived(commObject, sender)
-  sender = CommDKP:ResolveRosterName(sender) or CommDKP:NormalizeName(sender) or sender   -- AD-15.2
-  for teamIndex,team in pairs(commObject.Teams) do
-    local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex), sender, "player")
-    local curClass = "None";
-
-    if search then
-      local curSelection = CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex)[search[1][1]]
-      curClass = CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex)[search[1][1]].class
-    
-      if curClass == "WARRIOR" then
-        local a,b,c = strsplit("/", commObject.Data)
-        if strfind(commObject.Data, "Protection") or (tonumber(c) and tonumber(strsub(c, 1, -2)) > 15) then
-          curSelection.role = L["TANK"]
-        else
-          curSelection.role = L["MELEEDPS"]
-        end
-      elseif curClass == "PALADIN" then
-        if strfind(commObject.Data, "Protection") then
-          curSelection.role = L["TANK"]
-        elseif strfind(commObject.Data, "Holy") then
-          curSelection.role = L["HEALER"]
-        else
-          curSelection.role = L["MELEEDPS"]
-        end
-      elseif curClass == "HUNTER" then
-        curSelection.role = L["RANGEDPS"]
-      elseif curClass == "ROGUE" then
-        curSelection.role = L["MELEEDPS"]
-      elseif curClass == "PRIEST" then
-        if strfind(commObject.Data, "Shadow") then
-          curSelection.role = L["CASTERDPS"]
-        else
-          curSelection.role = L["HEALER"]
-        end
-      elseif curClass == "SHAMAN" then
-        if strfind(commObject.Data, "Restoration") then
-          curSelection.role = L["HEALER"]
-        elseif strfind(commObject.Data, "Elemental") then
-          curSelection.role = L["CASTERDPS"]
-        else
-          curSelection.role = L["MELEEDPS"]
-        end
-      elseif curClass == "MAGE" then
-        curSelection.role = L["CASTERDPS"]
-      elseif curClass == "WARLOCK" then
-        curSelection.role = L["CASTERDPS"]
-      elseif curClass == "DRUID" then
-        if strfind(commObject.Data, "Feral") then
-          curSelection.role = L["TANK"]
-        elseif strfind(commObject.Data, "Balance") then
-          curSelection.role = L["CASTERDPS"]
-        else
-          curSelection.role = L["HEALER"]
-        end
-      else
-        curSelection.role = L["NOROLEDETECTED"]
-      end
-
-      if CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender] == nil then
-        CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender] = CommDKP:GetDefaultEntity();
-      end
-
-      CommDKP:GetTable(CommDKP_Profiles, true, teamIndex)[sender].role = curSelection.role;
-      CommDKP:GetTable(CommDKP_DKPTable, true, teamIndex)[search[1][1]].role = curSelection.role;
-    end
+-- AD-19.2 (012g): ONE class + spec -> role rule (BR-12.14.4). Used by RolesReceived and SendTalentsAndRole.
+function CommDKP:ResolveRoleForClassAndSpec(classToken, specText)
+  local data = type(specText) == "string" and specText or ""
+  if classToken == "WARRIOR" then
+    local _, _, c = strsplit("/", data)
+    local legacyC = tonumber(c) and tonumber(strsub(c, 1, -2))      -- legacy expression, now nil-safe (R7)
+    local tally3 = tonumber(strmatch(data, "/(%d+)%)%s*$") or "")   -- "(t1/t2/t3)" third tally (R7, PM-12.10)
+    if strfind(data, "Protection") or (legacyC and legacyC > 15) or (tally3 and tally3 > 15) then return L["TANK"] end
+    return L["MELEEDPS"]
+  elseif classToken == "PALADIN" then
+    if strfind(data, "Protection") then return L["TANK"] elseif strfind(data, "Holy") then return L["HEALER"] end
+    return L["MELEEDPS"]
+  elseif classToken == "HUNTER" then return L["RANGEDPS"]
+  elseif classToken == "ROGUE" then return L["MELEEDPS"]
+  elseif classToken == "PRIEST" then return strfind(data, "Shadow") and L["CASTERDPS"] or L["HEALER"]
+  elseif classToken == "SHAMAN" then
+    if strfind(data, "Restoration") then return L["HEALER"] elseif strfind(data, "Elemental") then return L["CASTERDPS"] end
+    return L["MELEEDPS"]
+  elseif classToken == "MAGE" or classToken == "WARLOCK" then return L["CASTERDPS"]
+  elseif classToken == "DRUID" then
+    if strfind(data, "Feral") then return L["TANK"] elseif strfind(data, "Balance") then return L["CASTERDPS"] end
+    return L["HEALER"]
   end
-  return;
+  return L["NOROLEDETECTED"]
+end
+
+function CommDKP:RolesReceived(commObject, sender, distribution)   -- AD-26.4.1 + AD-30.1.7
+  if type(commObject) ~= "table" then return end
+  local name = CommDKP:ResolveSenderName(sender)
+  local _, n = CommDKP:ApplyReportedPlayerMeta(name, { roleData = commObject.Data }, commObject.Teams)
+  CommDKP:RecordMetaRecv("CommDKPRoles", sender, name, n, distribution)
 end
 
 ----------
 -- CDKProfileSend message HANDLERS
 ----------
 
-function CommDKP:ProfileSend(prefix, commObject, channel)
+function CommDKP:ProfileSend(prefix, commObject, channel, cb, cbArg)   -- AD-30.1.4: optional AceComm callback
   local _channel = channel or "GUILD";
   local _prefix = prefix or "CDKProfileSend";
-  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel);
+  CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel, nil, "NORMAL", cb, cbArg);
 end
 
 
-function CommDKP:ProfileReceived(commObject, sender)
-  local profile = commObject.Data;
+function CommDKP:ProfileReceived(commObject, sender, distribution)   -- AD-26.4.1 + AD-30.1.7
+  local profile = type(commObject) == "table" and commObject.Data
   if type(profile) ~= "table" then return end
-  profile.player = CommDKP:NormalizeName(profile.player) or profile.player   -- AD-15.2(b)
-  if not profile.player or profile.player == "" then return end
-  CommDKP:GetTable(CommDKP_Profiles, true, commObject.CurrentTeam)[profile.player] = profile;
-
-  --Legacy Version Tracking
-  local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam), profile.player, "player")
-  if search then
-    CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]].version = profile.version;
+  local name = CommDKP:ResolveSenderName(sender, profile.player)       -- learns the alias (F4); anti-spoof
+  if not name or name == "" then
+    CommDKP:RecordMetaRecv("CDKProfileSend", sender, nil, 0, distribution)
+    return
   end
+  local _, n = CommDKP:ApplyReportedPlayerMeta(name, { version = profile.version, class = profile.class }, commObject.Teams)
+  CommDKP:RecordMetaRecv("CDKProfileSend", sender, name, n, distribution)
+end
+
+function CommDKP:OnMetaSendResult(ctx, sent, total, didSend, result)   -- AD-30.1.4 (BR-22.2, F-1)
+  xpcall(function()
+    if type(ctx) ~= "table" or ctx.done then return end
+    if didSend == false then                                            -- final non-success (CTL already retried throttle/lockdown)
+      ctx.done = true
+      local name = CommDKP:SendResultName(result)
+      CommDKP:RecordMetaSend(ctx.prefix, ctx.channel, name)
+      if ctx.channel == "GUILD" and not ctx.fallback then
+        local gch = CommDKP:GetGroupCommChannel(false)
+        if gch then
+          local c2 = { prefix = ctx.prefix, channel = gch, text = ctx.text, fallback = true }
+          CommDKP.Sync:SendCommMessage(ctx.prefix, ctx.text, gch, nil, "NORMAL",
+            function(c, s, t, d, r) CommDKP:OnMetaSendResult(c, s, t, d, r) end, c2)
+        elseif type(core.LastOfficerSender) == "string" and core.LastOfficerSender ~= "" and not CommDKP:IsSelf(core.LastOfficerSender) then
+          local wText = CommDKP.Sync:ToPrintSafePacket(ctx.text)   -- AD-34.2 (G-26.2)
+          local c2 = { prefix = ctx.prefix, channel = "WHISPER", target = core.LastOfficerSender, text = wText, fallback = true }
+          CommDKP.Sync:SendCommMessage(ctx.prefix, wText, "WHISPER", core.LastOfficerSender, "NORMAL",
+            function(c, s, t, d, r) CommDKP:OnMetaSendResult(c, s, t, d, r) end, c2)
+        end
+        if not core.MetaGuildWarned then
+          core.MetaGuildWarned = true
+          CommDKP:PrintAlways(string.format(L["METAGUILDWARN"], name))
+        end
+      end
+      return
+    end
+    if didSend == nil and (total or 0) == 0 then                        -- CommGate collapsed it (DropDeferred: cbArg, 0, 0)
+      ctx.done = true
+      CommDKP:RecordMetaSend(ctx.prefix, ctx.channel, "Superseded")
+      return
+    end
+    if type(sent) == "number" and type(total) == "number" and sent >= total then   -- last chunk
+      ctx.done = true
+      CommDKP:RecordMetaSend(ctx.prefix, ctx.channel, didSend == true and CommDKP:SendResultName(result) or "Unknown")
+    end
+  end, geterrorhandler)
 end
 
 ----------
@@ -1016,11 +1169,20 @@ end
 
 
 function CommDKP:RaidTimeReceived(commObject, sender)
+  if CommDKP:IsSelf(sender) or type(commObject) ~= "table" or type(commObject.Data) ~= "string" then return end
   local command, args = strsplit(",", commObject.Data);
+  local isSync = type(command) == "string" and strfind(command, "sync", 1) ~= nil
+  -- AD-36.5.4 (BR-28.15): "start" (also resume) always moves the receiver to the raid's team, officers and raiders alike
+  -- (ruling 1); "sync" only when it differs (ruling 2 / CM-22: no per-minute redraw or meta burst); nothing else switches.
+  local function follow(always)
+    if always or tostring(commObject.CurrentTeam) ~= tostring(CommDKP:GetCurrentTeamIndex()) then
+      CommDKP:SetCurrentTeam(commObject.CurrentTeam)
+    end
+  end
 
-  if not CommDKP:IsSelf(sender) and core.IsOfficer and CommDKP.ConfigTab2 then
+  if core.IsOfficer and CommDKP.ConfigTab2 then
     if command == "start" then
-      CommDKP:SetCurrentTeam(commObject.CurrentTeam); -- on start change the currentTeam
+      follow(true)
       local arg1, arg2, arg3, arg4, arg5, arg6 = strsplit(" ", args, 6)
 
       if arg1 == "true" then arg1 = true else arg1 = false end
@@ -1052,16 +1214,17 @@ function CommDKP:RaidTimeReceived(commObject, sender)
       CommDKP:StartRaidTimer(arg1)
     elseif command == "stop" then
       CommDKP:StopRaidTimer()
-    elseif strfind(command, "sync", 1) then
+    elseif isSync then
       local _, syncTimer, syncSecondCount, syncMinuteCount, syncAward = strsplit(" ", command, 5)
       CommDKP:StartRaidTimer(nil, syncTimer, syncSecondCount, syncMinuteCount, syncAward)
-      CommDKP:SetCurrentTeam(commObject.CurrentTeam);
+      follow(false)
       core.RaidInProgress = true
     end
-  elseif not CommDKP:IsSelf(sender) and not core.IsOfficer and not CommDKP.ConfigTab2 then
-    CommDKP:SetCurrentTeam(commObject.CurrentTeam);
+  elseif command == "start" then
+    follow(true)
+  elseif isSync then
+    follow(false)
   end
-
 end
 
 ----------
@@ -1069,14 +1232,16 @@ end
 ----------
 
 function CommDKP:CastMsgSend(prefix, commObject, channel, player, prio)
-  local _channel = channel or "RAID";
   local _prefix = prefix or "CommDKPBCastMsg";
   local _prio = prio or "NORMAL";
 
   if player == nil then
+    local _channel = ResolveGroupChannel(channel, true);  -- AD-36.6.2 (BR-28.19, CM-19): RAID / PARTY when grouped, else GUILD
+    if not _channel then return end
     CommDKP.Sync:SendCommMessage(_prefix, commObject, _channel, nil, _prio, nil, nil);
   else
-    CommDKP.Sync:SendCommMessage(_prefix, commObject, "WHISPER", player, _prio, nil, nil);
+    -- AD-36.6.3 (BR-28.20, CM-20): WHISPER is print-safe (AD-34.2)
+    CommDKP.Sync:SendCommMessage(_prefix, CommDKP.Sync:ToPrintSafePacket(commObject), "WHISPER", player, _prio, nil, nil);
   end;
 end
 
@@ -1162,8 +1327,8 @@ end
 
 
 function CommDKP:PreBroadReceived(commObject, sender)
-  
-  if not CommDKP:IsSelf(sender) then
+
+  if CommDKP:IsSelf(sender) then   -- AD-36.6.1 (BR-28.18, CM-18)
     if commObject.Data == "CommDKPAllTabs" then
       print("[CommunityDKP] COMMS: You started Full Broadcast for team "..CommDKP:GetTeamName(commObject.CurrentTeam));
     elseif commObject.Data == "CommDKPMerge" then
@@ -1204,7 +1369,7 @@ function CommDKP:LootDistReceived(commObject)
   CommDKP:LootHistory_Reset()
   CommDKP:LootHistory_Update(L["NOFILTER"])
   CommDKP:FilterDKPTable(core.currentSort, "reset")
-  
+  if CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then CommDKP:StatusVerify_Update() end   -- AD-36.2.1 (BR-28.4, CM-06)
 end
 
 
@@ -1243,6 +1408,7 @@ function CommDKP:DKPDistReceived(commObject)
     CommDKP:DKPHistory_Update(true)
   end
   CommDKP:FilterDKPTable(core.currentSort, "reset")
+  if CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then CommDKP:StatusVerify_Update() end   -- AD-36.2.1 (BR-28.4, CM-06)
 end
 
 ----------
@@ -1273,6 +1439,7 @@ function CommDKP:DKPDecayReceived(commObject)
     CommDKP:DKPHistory_Update(true)
   end
   CommDKP:FilterDKPTable(core.currentSort, "reset")
+  if CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then CommDKP:StatusVerify_Update() end   -- AD-36.2.1 (BR-28.4, CM-06)
 end
 
 ----------
@@ -1281,6 +1448,7 @@ end
 
 function CommDKP:AddUsersReceived(commObject, sender)  -- AD-10.2: sender was an unset global
   if not CommDKP:IsSelf(sender) then
+    core.LastOfficerSender = sender
     CommDKP:AddEntitiesToDKPTable(commObject.Data, commObject.TargetTeam);
   end
   return;
@@ -1305,11 +1473,17 @@ function CommDKP:DelUsersReceived(commObject, sender)  -- AD-10.2: sender was an
 
         if (CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player] and commObject.Data[i].deleted) or (CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player] and CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player].edited < commObject.Data[i].edited) or (not CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player]) then
           --delete user, archive data
-          if not CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player] then    -- creates/adds to archive entry for user
-            CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player] = { dkp=0, lifetime_spent=0, lifetime_gained=0, deleted=commObject.Data[i].deleted, edited=commObject.Data[i].edited }
+          local src = commObject.Data[i]
+          local myRow = CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]]   -- before tremove
+          -- AD-36.8.2 (BR-28.23, CM-15): sender's pre-removal values; older sender -> my own row; else 0.
+          local function val(k) return tonumber(src[k]) or tonumber(myRow and myRow[k]) or 0 end
+          local arch = CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)
+          if not arch[src.player] then    -- creates/adds to archive entry for user
+            arch[src.player] = { dkp=val("dkp"), lifetime_spent=val("lifetime_spent"), lifetime_gained=val("lifetime_gained"), deleted=src.deleted, edited=src.edited }
           else
-            CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player].deleted = commObject.Data[i].deleted
-            CommDKP:GetTable(CommDKP_Archive, true, commObject.CurrentTeam)[commObject.Data[i].player].edited = commObject.Data[i].edited
+            arch[src.player].deleted = src.deleted
+            arch[src.player].edited = src.edited
+            arch[src.player].dkp, arch[src.player].lifetime_spent, arch[src.player].lifetime_gained = val("dkp"), val("lifetime_spent"), val("lifetime_gained")
           end
           
           c = CommDKP:GetCColors(CommDKP:GetTable(CommDKP_DKPTable, true, commObject.CurrentTeam)[search[1][1]].class)
@@ -1350,6 +1524,7 @@ end
 ----------
 
 function CommDKP:DelLootReceived(commObject)
+  if AlreadyHaveIndex(CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam), commObject.Data.index) then return end  -- AD-36.2.2 (BR-28.7, CM-16)
   local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_Loot, true, commObject.CurrentTeam), commObject.Data.deletes, "index")
 
   if search then
@@ -1372,6 +1547,7 @@ function CommDKP:DelLootReceived(commObject)
   CommDKP:LootHistory_Reset()
   CommDKP:LootHistory_Update(L["NOFILTER"]);
   CommDKP:FilterDKPTable(core.currentSort, "reset")
+  if CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then CommDKP:StatusVerify_Update() end   -- AD-36.2.1 (BR-28.4, CM-06)
 end
 
 ----------
@@ -1379,6 +1555,7 @@ end
 ----------
 
 function CommDKP:DelSyncReceived(commObject)
+  if AlreadyHaveIndex(CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam), commObject.Data.index) then return end  -- AD-36.2.2 (BR-28.7, CM-16)
   local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPHistory, true, commObject.CurrentTeam), commObject.Data.deletes, "index")
   local players = {strsplit(",", strsub(commObject.Data.players, 1, -2))}   -- cuts off last "," from string to avoid creating an empty value
   local dkp, mod;
@@ -1431,7 +1608,8 @@ function CommDKP:DelSyncReceived(commObject)
   if CommDKP.ConfigTab6 and CommDKP.ConfigTab6.history then
     CommDKP:DKPHistory_Update(true)
   end
-  CommDKP:DKPTable_Update()
+  CommDKP:FilterDKPTable(core.currentSort, "reset")   -- AD-36.2.5 (BR-28.8, CM-26)
+  if CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then CommDKP:StatusVerify_Update() end   -- AD-36.2.1 (BR-28.4, CM-06)
 end
 
 ----------
@@ -1440,29 +1618,35 @@ end
 
 function CommDKP:MinBidReceived(commObject)
   if core.IsOfficer then
-    core.DB.MinBidBySlot = commObject.Data[1]
-
-    for i=1, #commObject.Data[2] do
-      local bidInfo = commObject.Data[2][i]
-      local bidTeam = bidInfo[1]
-      local bidItems = bidInfo[2]
-      if bidItems ~= nil then
-        for j=1, #bidItems do
-          local search = CommDKP:GetTable(CommDKP_MinBids, true, bidTeam)[bidItems[j].itemID];
-          if search then
-            CommDKP:GetTable(CommDKP_MinBids, true, bidTeam)[bidItems[j].itemID].minbid = bidItems[j].minbid
-            if bidItems[j]["link"] ~= nil then
-              CommDKP:GetTable(CommDKP_MinBids, true, bidTeam)[bidItems[j].itemID].link = bidItems[j].link
+    local data = type(commObject) == "table" and commObject.Data or nil
+    if type(data) ~= "table" then return end
+    core.DB.MinBidBySlot = data[1]
+    -- AD-36.1.2 (BR-28.2, CM-02): pairs() over each team's items, so the string-keyed map (current senders) and a legacy
+    -- numeric array both apply. Stored under the STRING itemID key (AD-12.3). Malformed entries are skipped.
+    if type(data[2]) == "table" then
+      for _, bidInfo in ipairs(data[2]) do
+        local bidTeam = type(bidInfo) == "table" and bidInfo[1] or nil
+        local bidItems = type(bidInfo) == "table" and bidInfo[2] or nil
+        if (type(bidTeam) == "string" or type(bidTeam) == "number") and type(bidItems) == "table" then
+          local dest = CommDKP:GetTable(CommDKP_MinBids, true, tostring(bidTeam))
+          for k, v in pairs(bidItems) do
+            local id = type(v) == "table" and (v.itemID or (type(k) == "string" and k or nil)) or nil   -- D-36.5
+            if id ~= nil then
+              id = tostring(id)
+              local row = dest[id]
+              if type(row) == "table" then
+                row.minbid = v.minbid
+                if v.link ~= nil then row.link = v.link end
+                if v.icon ~= nil then row.icon = v.icon end
+              else
+                dest[id] = v
+              end
             end
-            if bidItems[j]["icon"] ~= nil then
-              CommDKP:GetTable(CommDKP_MinBids, true, bidTeam)[bidItems[j].itemID].icon = bidItems[j].icon
-            end
-          else
-            CommDKP:GetTable(CommDKP_MinBids, true, bidTeam)[bidItems[j].itemID] = bidItems[j];
           end
-        end 
+        end
       end
     end
+    if CommDKP.RefreshOptionsUI then CommDKP:RefreshOptionsUI() end
   end
 end
 
@@ -1472,24 +1656,25 @@ end
 
 function CommDKP:MaxbidReceived(commObject)
   if core.IsOfficer then
-
-    core.DB.MaxBidBySlot = commObject.Data[1];
-    _objMaxBidValues = commObject.Data[1];
-
-    for i=1, #commObject.Data[2] do
-      local bidInfo = commObject.Data[2][i]
-      local bidTeam = bidInfo[1]
-      local bidItems = bidInfo[2] or {}
-
-      for j=1, #bidItems do
-        local search = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_MaxBids, true, bidTeam), bidItems[j].item)
-        if search then
-          CommDKP:GetTable(CommDKP_MaxBids, true, bidTeam)[search[1][1]].maxbid = bidItems[j].maxbid
-        else
-          table.insert(CommDKP:GetTable(CommDKP_MaxBids, true, bidTeam), bidItems[j])
+    local data = type(commObject) == "table" and commObject.Data or nil
+    if type(data) ~= "table" then return end
+    core.DB.MaxBidBySlot = data[1];                                   -- AD-36.1.2: the global leak is gone
+    if type(data[2]) == "table" then
+      for _, bidInfo in ipairs(data[2]) do
+        local bidTeam = type(bidInfo) == "table" and bidInfo[1] or nil
+        local bidItems = type(bidInfo) == "table" and bidInfo[2] or nil
+        if (type(bidTeam) == "string" or type(bidTeam) == "number") and type(bidItems) == "table" then
+          local dest = CommDKP:GetTable(CommDKP_MaxBids, true, tostring(bidTeam))
+          for _, v in pairs(bidItems) do                                -- array upsert by item (C-28.7)
+            if type(v) == "table" and v.item ~= nil then
+              local search = CommDKP:Table_Search(dest, v.item)
+              if search then dest[search[1][1]].maxbid = v.maxbid else table.insert(dest, v) end
+            end
+          end
         end
-      end 
+      end
     end
+    if CommDKP.RefreshOptionsUI then CommDKP:RefreshOptionsUI() end
   end
 end
 
@@ -1509,6 +1694,7 @@ end
 
 function CommDKP:StandByReceived(commObject)
   CommDKP:SetTable(CommDKP_Standby, true, commObject.Data, commObject.CurrentTeam); -- issues/153
+  CommDKP:FilterDKPTable(core.currentSort, "reset")   -- AD-36.7 (BR-28.21a): no-op without the main window
 end
 
 ----------
@@ -1525,8 +1711,7 @@ function CommDKP:SetPriceReceived(commObject)
 
   CommDKP:GetTable(CommDKP_MinBids, true, commObject.CurrentTeam)[itemID] = _objSetPrice;
 
-  core.PriceTable = CommDKP:FormatPriceTable();
-  CommDKP:PriceTable_Update(0);
+  CommDKP:RefreshPriceTable();	-- AD-25 (S6)
 
 end
 
@@ -1541,11 +1726,130 @@ function CommDKP:DKPModesReceived(commObject)
   core.DB.modes = commObject.Data[1]
   core.DB.DKPBonus = commObject.Data[2]
   core.DB.raiders = commObject.Data[3]
+  if CommDKP.RefreshOptionsUI then CommDKP:RefreshOptionsUI() end
+  if CommDKP.RefreshModesWindow then                                   -- AD-35.6 (BR-27.7)
+    local okM, errM = pcall(CommDKP.RefreshModesWindow, CommDKP)
+    if not okM then geterrorhandler()(errM) end                        -- a UI error never undoes the applied payload
+  end
 end
 
 ----------
 -- CommDKPSeed message HANDLERS
 ----------
+
+----------
+-- AD-35.3 (CDKP-027) officer seed reply
+----------
+local OFFICER_SEED_COOLDOWN = 15            -- BR-27.3: <= 1 officer seed reply per 15 s
+local OFFICER_SEED_JITTER_MIN, OFFICER_SEED_JITTER_MAX = 1, 4   -- G-27.2: spread N officers; lets one cover the rest
+local OFFICER_SEED_SIG_TTL = 600            -- G-27.1: one answer per (sender, state) per 10 min
+
+-- G-27.6 / AD-35 D-1, D-2: the SAME per-table rule as SendSeedData (init.lua:373-393): the row at [1] if its index is
+-- "<officer>-<ts>" and that officer validates, else "start". Deletion rows are NOT skipped. H137a diffs this against
+-- the real SendSeedData; change both or neither. Returns index, row (row = nil for "start").
+function CommDKP:GetNewestSeedIndex(tbl)
+  local top = type(tbl) == "table" and tbl[1] or nil
+  if type(top) ~= "table" or type(top.index) ~= "string" or not strfind(top.index, "-") then return "start", nil end
+  local off = strsplit("-", top.index)
+  local okV, valid = pcall(CommDKP.ValidateSender, CommDKP, off)
+  if okV and valid then return top.index, top end
+  return "start", nil
+end
+
+-- BR-27.2(3): sorted "team|prop|theirs|mine" keys for which the sender is PROVABLY behind. Pure read, no writes.
+-- Behind = sender reported "start" while I have a valid newest, OR sender's index is a known row of mine that is
+-- strictly older (numeric .date) than my newest. Unknown index (sender ahead / diverged) = not behind (G-27.1).
+-- Teams come from my own team list (as SendSeedData), so a sender cannot make me create team buckets.
+function CommDKP:GetSeedBehindKeys(data)
+  local out = {}
+  if type(data) ~= "table" then return out end
+  for _, t in ipairs(CommDKP:GetGuildTeamList()) do
+    local team = tostring(t[1])
+    local v = data[team]
+    if type(v) == "table" then
+      for _, prop in ipairs({ "DKPHistory", "Loot" }) do
+        local theirs = v[prop]
+        if type(theirs) == "string" then
+          local tbl = CommDKP:GetTable(prop == "Loot" and CommDKP_Loot or CommDKP_DKPHistory, true, team)
+          local mine, myRow = CommDKP:GetNewestSeedIndex(tbl)
+          if mine ~= "start" and theirs ~= mine then
+            local behind = (theirs == "start")
+            if not behind then
+              for i = 2, #tbl do
+                local row = tbl[i]
+                if type(row) == "table" and row.index == theirs then
+                  behind = type(row.date) == "number" and type(myRow.date) == "number" and myRow.date > row.date
+                  break
+                end
+              end
+            end
+            if behind then out[#out + 1] = team .. "|" .. prop .. "|" .. theirs .. "|" .. mine end
+          end
+        end
+      end
+    end
+  end
+  table.sort(out)
+  return out
+end
+
+-- BR-27.3 / G-27.2: decides and schedules; returns true if a reply is (now or already) scheduled. State lives in
+-- core.OfficerSeedReply (session only, never SavedVariables).
+function CommDKP:QueueOfficerSeedReply(data, who)
+  if core.IsOfficer ~= true then return false end
+  local now = (type(GetTime) == "function" and GetTime()) or 0
+  core.OfficerSeedReply = core.OfficerSeedReply or { gen = 0, bySender = {} }
+  local st = core.OfficerSeedReply
+
+  -- G-27.2 coverage: while a reply is pending, ANY non-self seed that already carries my newest index for every pending
+  -- team/table reached the whole guild, so my pending reply is redundant (checked before this seed's own verdict).
+  if st.pending and st.pendingKeys and type(data) == "table" then
+    local all = true
+    for pk, mine in pairs(st.pendingKeys) do
+      local team, prop = strsplit("|", pk)
+      local v = data[team]
+      if not (type(v) == "table" and v[prop] == mine) then all = false; break end
+    end
+    if all then st.coveredAt = now end
+  end
+
+  for k, e in pairs(st.bySender) do if now - e.at >= OFFICER_SEED_SIG_TTL then st.bySender[k] = nil end end
+  local keys = CommDKP:GetSeedBehindKeys(data)
+  if #keys == 0 then return false end
+  local key = (type(who) == "string" and who ~= "") and who or "?"
+  local sig = table.concat(keys, ";")
+  if st.bySender[key] and st.bySender[key].sig == sig then return false end   -- G-27.1: this exact state already answered
+  st.bySender[key] = { sig = sig, at = now }
+  st.pendingKeys = st.pendingKeys or {}
+  for _, k in ipairs(keys) do
+    local team, prop, _, mine = strsplit("|", k)
+    st.pendingKeys[team .. "|" .. prop] = mine
+  end
+  if st.pending then return true end                                           -- coalesced: one reply covers all
+
+  local wait = 0
+  if st.lastReplyAt and now - st.lastReplyAt < OFFICER_SEED_COOLDOWN then
+    wait = st.lastReplyAt + OFFICER_SEED_COOLDOWN - now                         -- D-4: deferred, not dropped
+  end
+  local delay = wait + OFFICER_SEED_JITTER_MIN + math.random() * (OFFICER_SEED_JITTER_MAX - OFFICER_SEED_JITTER_MIN)
+  st.gen = st.gen + 1
+  local gen = st.gen
+  st.pending, st.coveredAt = true, nil
+  C_Timer.After(delay, function()
+    if gen ~= st.gen then return end
+    st.pending = false
+    local covered = st.coveredAt ~= nil
+    st.pendingKeys, st.coveredAt = nil, nil
+    st.lastReplyAt = (type(GetTime) == "function" and GetTime()) or 0
+    if covered then CommDKP:CommTrace("OFFSEED reply suppressed (covered by another seed)"); return end
+    if core.IsOfficer ~= true or not IsInGuild() then return end
+    local ok, err = pcall(CommDKP.SendSeedData, CommDKP)
+    if not ok then geterrorhandler()(err); return end
+    CommDKP:CommTrace("OFFSEED reply sent (%d key(s))", #keys)
+  end)
+  CommDKP:CommTrace("OFFSEED reply scheduled for %s in %.1fs", key, delay)
+  return true
+end
 
 function CommDKP:SeedReceived(commObject, sender)
 
@@ -1562,7 +1866,19 @@ function CommDKP:SeedReceived(commObject, sender)
       }
     --]]
 
-  if not CommDKP:IsSelf(sender) then
+  if CommDKP:IsSelf(sender) then
+    CommDKP:CommTrace("RECV CommDKPSeed from=%s (self echo) reply=none", tostring(sender))
+    return
+  end
+  local who = CommDKP:ResolveSenderName(sender)
+  local queued = CommDKP:QueueTalentSend("seed", nil, who)    -- AD-30.1.2 FIRST: nothing below can suppress the reply
+  CommDKP:CommTrace("RECV CommDKPSeed from=%s -> %s reply=%s", tostring(sender), tostring(who), queued and "scheduled" or "cooldown")
+  -- AD-34.1 (G-26.1): every member seeds now (BR-26.4); only a validated officer may become the WHISPER fallback target.
+  local okV, isOfficer = pcall(CommDKP.ValidateSender, CommDKP, sender)
+  if okV and isOfficer == true then core.LastOfficerSender = sender end
+  if type(commObject) ~= "table" or type(commObject.Data) ~= "table" then return end
+  local ok, err = pcall(function()   -- AD-30.1.2: a seed-loop error is reported but never suppresses the reply
+    local changed = false
     for tableIndex,v in pairs(commObject.Data) do
       if(type(v) == "table") then
         for property,value in pairs(v) do
@@ -1576,14 +1892,16 @@ function CommDKP:SeedReceived(commObject, sender)
                 local searchLoot = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_Loot, true, tostring(tableIndex)), value, "index")
 
                 if not searchLoot then
-                  CommDKP:GetTable(CommDKP_Loot, true, tostring(tableIndex)).seed = value
+                  local t = CommDKP:GetTable(CommDKP_Loot, true, tostring(tableIndex))
+                  if t.seed ~= value then t.seed = value; changed = true end          -- AD-35.2 (BR-27.1)
                 end
 
               elseif property == "DKPHistory" then
                 local searchDKPHistory = CommDKP:Table_Search(CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(tableIndex)), value, "index")
                 
                 if not searchDKPHistory then
-                  CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(tableIndex)).seed = value
+                  local t = CommDKP:GetTable(CommDKP_DKPHistory, true, tostring(tableIndex))
+                  if t.seed ~= value then t.seed = value; changed = true end          -- AD-35.2 (BR-27.1)
                 end
               end
             end
@@ -1591,6 +1909,19 @@ function CommDKP:SeedReceived(commObject, sender)
         end
       end
     end
+    -- AD-35.2 (BR-27.1): one pip refresh after the loop, only when a .seed really changed. Guarded for sandboxes and
+    -- for seeds that arrive before CreateMenu (+5 s) has built the pip; StatusVerify_Update keeps its own hidden-window
+    -- early return (G-27.7), so core.OOD is then computed when the window opens.
+    if changed and CommDKP.StatusVerify_Update and CommDKP.DKPTable and CommDKP.DKPTable.SeedVerify then
+      CommDKP:StatusVerify_Update()
+    end
+  end)
+  if not ok then geterrorhandler()(err) end
+  -- AD-35.3 (BR-27.2): an online officer answers a provably-stale seed with its own seed. Fail-closed: any error means
+  -- "no reply" and is only traced (never raised), so sandboxes without guild APIs (H128/H132) see no change.
+  if core.IsOfficer == true and CommDKP.QueueOfficerSeedReply then
+    local okR, res = pcall(CommDKP.QueueOfficerSeedReply, CommDKP, commObject.Data, who)
+    if not okR then CommDKP:CommTrace("OFFSEED reply skipped from=%s (error: %s)", tostring(who), tostring(res)) end
   end
 end
 
@@ -1600,6 +1931,13 @@ end
 
 function CommDKP:TeamsReceived(commObject, sender)
   CommDKP:GetTable(CommDKP_DB, false)["teams"] = commObject.Teams
+  -- AD-36.5.3 (BR-28.14, CM-10): show a renamed team at once; never switches team. Skipped (no error) without the main
+  -- window or when the new list lacks my current index (GetCurrentTeamName would index nil).
+  local ui, teams = CommDKP.UIConfig, commObject.Teams
+  if ui and ui.TeamViewChangerDropDown and CommDKP.DD and type(teams) == "table"
+    and type(teams[CommDKP:GetCurrentTeamIndex()]) == "table" then
+    CommDKP.DD:UIDropDownMenu_SetText(ui.TeamViewChangerDropDown, CommDKP:GetCurrentTeamName())
+  end
 end
 
 ----------

@@ -7,19 +7,8 @@ local L = core.L;
 --  When clicking a box off, unchecks "All" as well and flags checkAll to false
 --
 local checkAll = true;                    -- changes to false when less than all of the boxes are checked
-local curReason;                          -- stores user input in dropdown 
-
-local function ScrollFrame_OnMouseWheel(self, delta)          -- scroll function for all but the DKPTable frame
-	local newValue = self:GetVerticalScroll() - (delta * 20);   -- DKPTable frame uses FauxScrollFrame_OnVerticalScroll()
-	
-	if (newValue < 0) then
-		newValue = 0;
-	elseif (newValue > self:GetVerticalScrollRange()) then
-		newValue = self:GetVerticalScrollRange();
-	end
-	
-	self:SetVerticalScroll(newValue);
-end
+local curReason;                          -- stores user input in dropdown
+local W = CommDKP.Widgets                 -- CDKP-009 kit (Modules/UI/Widgets.lua, loaded after Core.lua)
 
 function CommDKPFilterChecks(self)         -- sets/unsets check boxes in conjunction with "All" button, then runs CommDKP:FilterDKPTable() above
 	local verifyCheck = true; -- switches to false if the below loop finds anything unchecked
@@ -51,258 +40,233 @@ function CommDKPFilterChecks(self)         -- sets/unsets check boxes in conjunc
 	CommDKP:FilterDKPTable(core.currentSort, "reset");
 end
 
+-- AD-28.2.1 (CDKP-020, BR-20.1/20.2): "In Party/Raid" (11) and "Not In Raid" (13) are an exclusive pair;
+-- "Online" (12) is independent and keeps CommDKPFilterChecks as its OnClick. The click has already toggled `btn`.
+function CommDKP:GroupFilterOnClick(btn)
+	local id = btn:GetID()
+	local partner = (id == 11 and 13) or (id == 13 and 11) or nil
+	if partner and CommDKP.ConfigTab1.checkBtn[partner] then
+		CommDKP.ConfigTab1.checkBtn[partner]:SetChecked(false)
+	end
+	CommDKPFilterChecks(btn)                       -- plays 808 once and re-filters (unchanged)
+end
+
 ---------------------------------------
--- CDKP-006 F6-b (AD-8.3): tab logic owned by the addon. The Mainline tab-template helpers read
--- parentKey fields whose names have already changed once, so we never call them.
+-- UX §11.1.4 / §11.3.3: right-edge icon side-tabs (supersede the §9 bottom tabs and the legacy XML tab
+-- template). CommDKP:SetTabs keeps its signature and return values, so both callers
+-- (ConfigMenuTabs: 7 panes, DKPModesFrame_Create: 2 panes) and every _G[frameName.."Tab"..i] lookup still work.
+-- Optional fields on `frame` (set by the caller before SetTabs):
+--   frame.sideTabHost   frame whose right edge carries the tabs (default: frame itself)
+--   frame.sideTabIcons  { [i] = { iconPath, fallbackPath, ... } }
+--   frame.onSideTabClick function(i) called on click (default: CommDKP:ShowTabPane(frame, i)); return false = no-op
+--   host.sideTabOrder   (AD-31) optional { idx, ... } rail order read by StackSideTabs from the HOST (sideTabHost) so every
+--                       re-stack (SetTabs, UpdateGuildUIState) keeps it; absent = index order (DKP Modes)
 ---------------------------------------
--- UX §9.2 (DKP Modes window only, opt-in via frame.useRetailTabs): Accountant-Classic style tabs built
--- from scratch on native 12.x atlases. The legacy CommDKPTabButtonTemplate path is untouched (§9.2.0).
-local RETAIL_TAB_HTILE = true          -- §9.2.1: flip to false if the center strip shows seams in game
-local RETAIL_FONT_NORMAL    = "GameFontNormalSmall"     -- inactive: gold
-local RETAIL_FONT_HIGHLIGHT = "GameFontHighlightSmall"  -- hover / active: white
+local SIDE_TAB_TOP = -42                 -- first tab 18 px below the 24 px title bar
 
-local function HasAtlas(name)
-	return C_Texture and C_Texture.GetAtlasInfo and C_Texture.GetAtlasInfo(name) ~= nil
-end
+-- §11.1.4 icon table for the main window (index = ConfigTab1..7, NOT rail position; rail order: MAIN_SIDE_TAB_ORDER).
+-- Titles come from the SetTabs varargs.
+local SIDE_TAB_ICONS = {
+	{ "Interface\\Icons\\INV_Misc_Spyglass_03", "Interface\\Icons\\Ability_Spy" },                -- 1 Filters
+	{ 4624666, "Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\cdkp-tab-adjust-dkp", "Interface\\Icons\\Spell_ChargePositive" },   -- 2 Adjust DKP (CDKP-024: FileDataID 4624666 + addon TGA + stock fallback)
+	{ 134149, "Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\cdkp-tab-manage-roster", "Interface\\Icons\\INV_Misc_Note_01" },     -- 3 Manage DKP Roster (CDKP-024: FileDataID 134149 + addon TGA + stock fallback)
+	{ "Interface\\Icons\\INV_Gizmo_02", "Interface\\Icons\\Trade_Engineering" },                   -- 4 Options
+	{ "Interface\\Icons\\INV_Misc_Bag_10", "Interface\\Icons\\INV_Box_02" },                       -- 5 Loot History
+	{ "Interface\\Icons\\INV_Misc_Book_09", "Interface\\Icons\\INV_Scroll_03" },                   -- 6 DKP History
+	{ "Interface\\Icons\\INV_Misc_Coin_01", "Interface\\Icons\\INV_Misc_Coin_03" },                -- 7 Pricing (CDKP-023: + fallback)
+}
+CommDKP.SideTabIcons = SIDE_TAB_ICONS
 
--- Mirrors Accountant_Classic/Core/Tabs.lua createRetailTabTextures + createTab (no XML template, so no
--- inherited <TexCoords>/<Size>/file= state can pollute the atlas textures).
-local function CreateRetailTab(frame, i)
-	local tab = CreateFrame("Button", frame:GetName().."Tab"..i, frame)   -- NO CommDKPTabButtonTemplate
-	tab:SetID(i)
-	tab:SetSize(10, 32)
-	tab:EnableMouse(true)
-	if tab.SetMotionScriptsWhileDisabled then tab:SetMotionScriptsWhileDisabled(true) end  -- tooltip on active tab
+-- AD-31 (CDKP-023): main-window rail order, top to bottom, as ConfigTab indexes:
+-- Filters, Manage DKP Roster (3), Adjust DKP (2), Options, Loot History, DKP History, Pricing.
+local MAIN_SIDE_TAB_ORDER = { 1, 3, 2, 4, 5, 6, 7 }
+CommDKP.MainSideTabOrder = MAIN_SIDE_TAB_ORDER   -- read-only; exported for H133
 
-	local function tex(atlas)
-		local t = tab:CreateTexture(nil, "BACKGROUND")    -- fresh region: no TexCoords / Size / file
-		t:SetAtlas(atlas, true)
-		return t
-	end
-	tab.Left        = tex("uiframe-tab-left");         tab.Left:SetPoint("TOPLEFT",  tab, "TOPLEFT",  -3, 0)
-	tab.Right       = tex("uiframe-tab-right");        tab.Right:SetPoint("TOPRIGHT", tab, "TOPRIGHT",  7, 0)
-	tab.Middle      = tex("_uiframe-tab-center")
-	tab.LeftActive  = tex("uiframe-activetab-left");   tab.LeftActive:SetPoint("TOPLEFT",  tab, "TOPLEFT",  -1, 0)
-	tab.RightActive = tex("uiframe-activetab-right");  tab.RightActive:SetPoint("TOPRIGHT", tab, "TOPRIGHT",  8, 0)
-	tab.MiddleActive= tex("_uiframe-activetab-center")
-	for _, pair in ipairs({ { tab.Middle, tab.Left, tab.Right }, { tab.MiddleActive, tab.LeftActive, tab.RightActive } }) do
-		local m, l, r = pair[1], pair[2], pair[3]
-		if RETAIL_TAB_HTILE then m:SetHorizTile(true) end
-		m:SetPoint("LEFT", l, "RIGHT"); m:SetPoint("RIGHT", r, "LEFT")   -- 2-point span: width comes from the tab
-	end
-
-	local text = tab:CreateFontString(nil, "ARTWORK", RETAIL_FONT_NORMAL)
-	text:SetPoint("CENTER", tab, "CENTER", 0, 2)
-	if tab.SetFontString then tab:SetFontString(text) end   -- tab:SetText() / state fonts drive this FontString
-	if tab.SetNormalFontObject then
-		tab:SetNormalFontObject(GameFontNormalSmall or RETAIL_FONT_NORMAL)              -- inactive: gold
-		tab:SetHighlightFontObject(GameFontHighlightSmall or RETAIL_FONT_HIGHLIGHT)     -- hover: white
-		tab:SetDisabledFontObject(GameFontHighlightSmall or RETAIL_FONT_HIGHLIGHT)      -- active (Disable()d): white
-	end
-	tab.Text = text
-	tab.isRetailArt = true
-	return tab
-end
-
--- Replicates the legacy TabResize(tab, 0, nil, minW, maxW) on our own parentKeys.
-local function TabResize(tab)
-	if tab.isRetailArt then                                -- UX §9.2.3
-		local minW, maxW = 44, tab.maxTextWidth or 88
-		local capW  = (tab.Left:GetWidth() or 0) + (tab.Right:GetWidth() or 0)
-		local sides = math.max(capW, 44)                   -- floor at the real cap art: caps can never cross
-		tab.Text:SetWidth(0)
-		local w = tab.Text:GetStringWidth()
-		if w > maxW then w = maxW end
-		if w < minW then w = minW end
-		tab.Text:SetWidth(w)                               -- truncation -> IsTruncated() tooltip still works
-		tab:SetWidth(w + sides)                            -- NO Middle/MiddleActive:SetWidth: the 2-point anchors span it
-		return
-	end
-	local minW, maxW = 36, tab.maxTextWidth or 57
-	local sides = 2 * tab.Left:GetWidth()
-	tab.Text:SetWidth(0)                                   -- measure natural width
-	local w = tab.Text:GetStringWidth()
-	if w > maxW then w = maxW end
-	if w < minW then w = minW end
-	tab.Text:SetWidth(w)                                   -- truncates (enables IsTruncated tooltip)
-	tab.Middle:SetWidth(w); tab.MiddleActive:SetWidth(w)
-	tab:SetWidth(w + sides)
-end
-
-local function TabSetSelected(tab, selected)
-	tab.Left:SetShown(not selected); tab.Middle:SetShown(not selected); tab.Right:SetShown(not selected)
-	tab.LeftActive:SetShown(selected); tab.MiddleActive:SetShown(selected); tab.RightActive:SetShown(selected)
-	if selected then tab:Disable() else tab:Enable() end   -- legacy behaviour: the selected tab is disabled
-	if tab.isRetailArt then                                -- belt and braces: don't rely on button-state font swap
-		tab.Text:SetFontObject(selected and RETAIL_FONT_HIGHLIGHT or RETAIL_FONT_NORMAL)
-	end
-end
-
-local function SelectTab(frame, id)
+-- Pane switch shared by both tab hosts: shows pane `id` in frame.ScrollFrame, hides the previous one,
+-- toggles the scroll bar, refreshes the history panes, and checks only tab `id`.
+function CommDKP:ShowTabPane(frame, id)
+	local tab = frame.Tabs and frame.Tabs[id]
+	if not tab then return end
 	frame.selectedTab = id                                 -- same field the Blizzard helpers used
-	for i = 1, frame.numTabs do
-		TabSetSelected(_G[frame:GetName().."Tab"..i], i == id)
-	end
-end
+	for i, t in ipairs(frame.Tabs) do t:cdkpSetSelected(i == id) end
 
-local function Tab_OnEvent(self)
-	if self:IsVisible() then TabResize(self) end
-end
-
-local function Tab_OnEnter(self)
-	if self.isRetailArt and self:IsEnabled() then self.Text:SetFontObject(RETAIL_FONT_HIGHLIGHT) end   -- hover: white
-	if self.Text:IsTruncated() then
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
-		GameTooltip:SetText(self.Text:GetText());
-	end
-end
-
-local function RetailTab_OnLeave(self)
-	if self:IsEnabled() then self.Text:SetFontObject(RETAIL_FONT_NORMAL) end   -- back to gold (active tab stays white)
-	GameTooltip_Hide()
-end
-
-local function Tab_OnClick(self)
-	SelectTab(self:GetParent(), self:GetID());
-	
-	if self:GetID() > 4 then
-		self:GetParent().ScrollFrame.ScrollBar:Show()
-	elseif self:GetID() == 4 and core.IsOfficer == true then
-		self:GetParent().ScrollFrame.ScrollBar:Show()
-	else
-		self:GetParent().ScrollFrame.ScrollBar:Hide()
+	local sf = frame.ScrollFrame
+	if sf.UpdateRail then
+		-- §12.2.8: the kit rail shows itself only while the pane overflows (refreshed after the child swap below).
+	elseif sf.ScrollBar then
+		if id > 4 and id ~= 7 then
+			sf.ScrollBar:Show()
+		elseif id == 4 and core.IsOfficer == true then
+			sf.ScrollBar:Show()
+		else
+			sf.ScrollBar:Hide()
+		end
 	end
 
-	if self:GetID() == 5 then
-		CommDKP:LootHistory_Update(L["NOFILTER"]);
-	elseif self:GetID() == 6 then
-		CommDKP:DKPHistory_Update(true)
+	if frame.numTabs == 7 then                             -- history panes only exist in the main window
+		if id == 5 then
+			CommDKP:LootHistory_Update(L["NOFILTER"]);
+		elseif id == 6 then
+			CommDKP:DKPHistory_Update(true)
+		elseif id == 7 then
+			CommDKP:RefreshPriceTable() -- AD-25.2.8: Pricing always reflects MinBids on show (keeps offset)
+		end
 	end
 
-	if self:GetID() == 7 then
-		self:GetParent().ScrollFrame.ScrollBar:Hide()
-	end
-
-	local scrollChild = self:GetParent().ScrollFrame:GetScrollChild();
-	if (scrollChild) then
+	local scrollChild = sf:GetScrollChild();
+	if scrollChild and scrollChild ~= tab.content then
 		scrollChild:Hide();
 	end
-	
-	PlaySound(808)
-	self:GetParent().ScrollFrame:SetScrollChild(self.content);
-	self.content:Show();
-	self:GetParent().ScrollFrame:SetVerticalScroll(0)
+	sf:SetScrollChild(tab.content);
+	tab.content:Show();
+	sf:SetVerticalScroll(0)
+	if sf.UpdateRail then sf:UpdateRail() end
 end
 
 function CommDKP:SetTabs(frame, numTabs, width, height, ...)
 	frame.numTabs = numTabs;
-	
-	local contents = {};
+
+	local contents, tabs = {}, {};
 	local frameName = frame:GetName();
-	
-	-- UX §9.2.2: opt-in retail tabs (DKP Modes window only); falls back to legacy when atlases are missing.
-	local retail = frame.useRetailTabs and HasAtlas("uiframe-tab-left") and true or false
+	local host = frame.sideTabHost or frame
+	local icons = frame.sideTabIcons or SIDE_TAB_ICONS
 
 	for i = 1, numTabs do
-		local tab
-		if retail then
-			tab = CreateRetailTab(frame, i)                              -- no SetFrameLevel(+4): AC parity
-		else
-			tab = CreateFrame("Button", frameName.."Tab"..i, frame, "CommDKPTabButtonTemplate");
-			tab:SetID(i);
-			tab:SetFrameLevel(tab:GetFrameLevel() + 4)                   -- was XML OnLoad
-		end
-		if GetLocale() == "enUS" and (i == 2 or i == 5 or i == 6) then   -- was the XML OnShow name check
-			tab.maxTextWidth = frame.maxTabWidth or 88                     -- corrects width on tabs for English client
-		end
-		tab:SetScript("OnShow", TabResize)
-		tab:RegisterEvent("DISPLAY_SIZE_CHANGED")
-		tab:SetScript("OnEvent", Tab_OnEvent)
-		tab:SetScript("OnEnter", Tab_OnEnter)
-		tab:SetScript("OnLeave", retail and RetailTab_OnLeave or GameTooltip_Hide)
-		tab:SetText(select(i, ...));
-		if not retail then                                                -- legacy look kept verbatim (§9.2.0)
-			tab.Text:SetFontObject("CommDKPSmallOutlineCenter")
-			tab.Text:SetTextColor(0.7, 0.7, 0.86, 1)
-		end
-		TabResize(tab)                                                  -- OnShow doesn't fire under a hidden parent
-		tab:SetScript("OnClick", Tab_OnClick);
-		
+		local title = select(i, ...)
+		local tab = CommDKP:CreateSideTab(host, frameName, i, icons[i], title, function()
+			-- AD-19.2 (012d) (c) / BR-12.4: the sound plays only when the click changes something
+			-- (an onSideTabClick returning false is a silent no-op).
+			if frame.onSideTabClick then
+				if frame.onSideTabClick(i) ~= false then PlaySound(808) end
+			else
+				PlaySound(808); CommDKP:ShowTabPane(frame, i)
+			end
+		end)
+		_G[frameName.."Tab"..i] = tab                       -- legacy global name (Toggle, SettingsPanel, tests)
+
 		tab.content = CreateFrame("Frame", nil, frame.ScrollFrame);
 		tab.content:SetSize(width, height);
 		tab.content:Hide();
-				
-		table.insert(contents, tab.content);
-		
-		if retail then                                                    -- UX §9.2.4: Accountant_Classic Tabs.lua:95-100
-			if (i == 1) then
-				tab:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 15, -20);
-			else
-				tab:SetPoint("LEFT", _G[frameName.."Tab"..(i - 1)], "RIGHT", 5, 0);
-			end
-		elseif (i == 1) then
-			tab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", -5, 1);
-		else
-			tab:SetPoint("TOPLEFT", _G[frameName.."Tab"..(i - 1)], "TOPRIGHT", -17, 0);
-		end
-	end
 
-	Tab_OnClick(_G[frameName.."Tab1"]);
-	
+		tabs[i] = tab
+		table.insert(contents, tab.content);
+	end
+	frame.Tabs = tabs
+	host.SideTabs = tabs
+	CommDKP:StackSideTabs(host, tabs, SIDE_TAB_TOP)
+
+	CommDKP:ShowTabPane(frame, 1);
+
 	return unpack(contents);
 end
 
 ---------------------------------------
--- Populate Tabs 
+-- §12.3.6 history panes (Loot History / DKP History): a compact Filter card holding the filter selector (placed by
+-- LootHistory.lua / DKPHistory.lua on tab.FilterCard.Body) and the right-aligned `inst` caption, plus a Log card
+-- whose body is a scroll region. Entries are parented to tab.LogContent (= the region's scroll child).
+---------------------------------------
+function CommDKP:CreateHistoryCards(tab, logTitle)
+	tab.FilterCard = W.CreateCard(tab, L["CARDFILTER"], 534, 71)   -- AD-19.2 (012d) (d) R5: cards end at x 534
+	tab.FilterCard:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, 0)
+	tab.inst = W.CreateText(tab.FilterCard.Body, "caption", nil, "RIGHT", "textMuted")
+	tab.inst:SetPoint("RIGHT", tab.FilterCard.Body, "RIGHT", -W.PAD, 0)
+	tab.inst:SetWidth(300)
+
+	tab.LogCard = W.CreateCard(tab, logTitle, 534, 403)
+	tab.LogCard:SetPoint("TOPLEFT", tab, "TOPLEFT", 0, -79)
+	tab.LogScroll = W.CreateScrollRegion(tab.LogCard.Body, { step = 40 })
+	tab.LogScroll:SetPoint("TOPLEFT", tab.LogCard.Body, "TOPLEFT", 8, -6)
+	tab.LogScroll:SetPoint("BOTTOMRIGHT", tab.LogCard.Body, "BOTTOMRIGHT", -16, 6)
+	tab.LogContent = tab.LogScroll.ScrollChild
+	tab.LogContent:SetSize(516, 1)
+	return tab.FilterCard, tab.LogCard
+end
+
+-- Grows the Log scroll content to cover `last` (the bottom-most entry or the Load More button), then refreshes the rail.
+function CommDKP:FitHistoryLog(tab, last)
+	if not (tab and tab.LogContent) then return end
+	if last then W.FitScrollChild(tab.LogContent, last, 12) else tab.LogContent:SetHeight(1) end
+	if tab.LogScroll.UpdateRail then tab.LogScroll:UpdateRail() end
+end
+
+---------------------------------------
+-- Populate Tabs
 ---------------------------------------
 function CommDKP:ConfigMenuTabs()
 	---------------------------------------
 	-- TabMenu
 	---------------------------------------
 
-	CommDKP.UIConfig.TabMenu = CreateFrame("Frame", "CommDKPCommDKP.ConfigTabMenu", CommDKP.UIConfig, "BackdropTemplate");
-	
-	CommDKP.UIConfig.TabMenu:SetPoint("TOPRIGHT", CommDKP.UIConfig, "TOPRIGHT", -25, -25); --Moves the entire tabframe (defaults -25, -25)
-	CommDKP.UIConfig.TabMenu:SetSize(535, 510);  --default: 477,510
-	CommDKP:ApplyBackdrop(CommDKP.UIConfig.TabMenu, "BorderOnly", "ContainerBg", "ContainerBorder")
-	CommDKP.UIConfig.TabMenuBG = CommDKP.UIConfig.TabMenu:CreateTexture(nil, "OVERLAY", nil);
-	CommDKP.UIConfig.TabMenuBG:SetColorTexture(0, 0, 0, 1)
-	CommDKP.UIConfig.TabMenuBG:SetPoint("TOPLEFT", CommDKP.UIConfig.TabMenu, "TOPLEFT", 2, -2);
-	CommDKP.UIConfig.TabMenuBG:SetSize(536, 511);
-	CommDKP.UIConfig.TabMenuBG:SetTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\menu-bg");
+	-- UX §12.1.2: right workspace, 548 x 524 at (544, -52). No fill and no border: it only holds the page header
+	-- and the pane. The 14 px seam x 530..544 between the Roster Card and the workspace stays bare (BR-9.1.4).
+	local menu = CreateFrame("Frame", "CommDKPCommDKP.ConfigTabMenu", CommDKP.UIConfig);
+	CommDKP.UIConfig.TabMenu = menu
+	menu:SetPoint("TOPLEFT", CommDKP.UIConfig, "TOPLEFT", 544, -52);
+	menu:SetSize(548, 524);
 
-	-- TabMenu ScrollFrame and ScrollBar
-	CommDKP.UIConfig.TabMenu.ScrollFrame = CreateFrame("ScrollFrame", nil, CommDKP.UIConfig.TabMenu, "UIPanelScrollFrameTemplate");
-	CommDKP.UIConfig.TabMenu.ScrollFrame:ClearAllPoints();
-	CommDKP.UIConfig.TabMenu.ScrollFrame:SetPoint("TOPLEFT",  CommDKP.UIConfig.TabMenu, "TOPLEFT", 4, -8);
-	CommDKP.UIConfig.TabMenu.ScrollFrame:SetPoint("BOTTOMRIGHT", CommDKP.UIConfig.TabMenu, "BOTTOMRIGHT", -3, 4);
-	CommDKP.UIConfig.TabMenu.ScrollFrame:SetClipsChildren(false);
-	CommDKP.UIConfig.TabMenu.ScrollFrame:SetScript("OnMouseWheel", ScrollFrame_OnMouseWheel);
-	
+	-- §12.2.2 page header (548 x 34): active tab title + the « Collapse pill in its right slot (UX §13.4.3).
+	-- TabMenu.HeaderText stays the alias SelectSideTab writes (AD-16.2 (c)).
+	menu.Header = W.CreatePageHeader(menu, L["FILTERS"])
+	menu.Header:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, 0)
+	menu.Header:SetPoint("TOPRIGHT", menu, "TOPRIGHT", 0, 0)
+	menu.Header:SetHeight(W.PAGE_HDR + 6)
+	menu.HeaderText = menu.Header.Title
+	-- AD-19.2 (012d) (d) / BR-12.5: single-border pill (double chevron + "Collapse"), 24 tall in the 28 px band.
+	menu.CollapseBtn = W.CreatePillButton(menu.Header.Band, COLLAPSE or "Collapse", "left", function()
+		PlaySound(808)
+		CommDKP:SetWorkspaceShown(false)
+	end)
+	menu.CollapseBtn:SetPoint("RIGHT", menu.Header.Band, "RIGHT", -4, 0)
+	menu.CollapseBtn:HookScript("OnEnter", function(self)
+		if not GameTooltip then return end
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		GameTooltip:SetText(COLLAPSE or "Collapse", 1, 0.82, 0)
+		GameTooltip:AddLine(L["COLLAPSEDESC"] or "Hide the workspace (click any side-tab to reopen)", 1, 1, 1, true)
+		GameTooltip:Show()
+	end)
+	menu.CollapseBtn:HookScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+	menu.Header.CollapseBtn = menu.CollapseBtn
 
+	-- §12.1.2 / §12.2.8: the pane is a template-free scroll region (548 x 482 at TabMenu (0, -42)); its 6 px rail
+	-- sits inside the pane's right lane (x 538..544), never on the seam. menu.ScrollFrame / .ScrollBar keep their keys.
+	menu.ScrollFrame = W.CreateScrollRegion(menu, { step = 40 })
+	menu.ScrollFrame:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, -42);
+	menu.ScrollFrame:SetPoint("BOTTOMRIGHT", menu, "BOTTOMRIGHT", 0, 0);
+	menu.ScrollBar = menu.ScrollFrame.ScrollBar
+	menu.ScrollBar:ClearAllPoints()
+	menu.ScrollBar:SetPoint("TOPRIGHT", menu.ScrollFrame, "TOPRIGHT", -4, 0)
+	menu.ScrollBar:SetPoint("BOTTOMRIGHT", menu.ScrollFrame, "BOTTOMRIGHT", -4, 0)
+	menu.ScrollBar:SetFrameLevel(menu.ScrollFrame:GetFrameLevel() + 20)   -- above the cards in the pane
 
-	CommDKP.ConfigTab1, CommDKP.ConfigTab2, CommDKP.ConfigTab3, CommDKP.ConfigTab4, CommDKP.ConfigTab5, CommDKP.ConfigTab6, CommDKP.ConfigTab7 = CommDKP:SetTabs(CommDKP.UIConfig.TabMenu, 7, 533, 490, L["FILTERS"], L["ADJUSTDKP"], L["MANAGE"], L["OPTIONS"], L["LOOTHISTORY"], L["DKPHISTORY"], L["PRICETAB"]);
+	-- UX §11.1.4: the 7 side-tabs hang off UIConfig's right edge (always visible, also when collapsed).
+	menu.sideTabHost = CommDKP.UIConfig
+	menu.sideTabIcons = SIDE_TAB_ICONS
+	CommDKP.UIConfig.sideTabOrder = MAIN_SIDE_TAB_ORDER                      -- AD-31: rail order (host-level; UpdateGuildUIState re-uses it)
+	menu.onSideTabClick = function(i) return CommDKP:SelectSideTab(i) end   -- false = active-tab no-op (BR-12.4)
+
+	-- §12.3: every pane is 548 x 482 of scroll-region content (cards are pane-relative; Options grows its own height).
+	CommDKP.ConfigTab1, CommDKP.ConfigTab2, CommDKP.ConfigTab3, CommDKP.ConfigTab4, CommDKP.ConfigTab5, CommDKP.ConfigTab6, CommDKP.ConfigTab7 = CommDKP:SetTabs(menu, 7, 548, 482, L["FILTERS"], L["ADJUSTDKP"], L["MANAGEDKPROSTER"], L["OPTIONS"], L["LOOTHISTORY"], L["DKPHISTORY"], L["PRICETAB"]);
+	CommDKP.UIConfig.activeTab = 1
+	menu.HeaderText:SetText(L["FILTERS"])
 
 	---------------------------------------
-	-- MENU TAB 1
+	-- MENU TAB 1: Filters (§12.3.2). The page header is the only title (Q7): no in-pane large heading.
 	---------------------------------------
-	CommDKP.ConfigTab1.text = CommDKP.ConfigTab1:CreateFontString(nil, "OVERLAY")   -- Filters header
-	CommDKP.ConfigTab1.text:ClearAllPoints();
-	CommDKP.ConfigTab1.text:SetFontObject("CommDKPLargeCenter")
-	CommDKP.ConfigTab1.text:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab1.text:SetText(L["FILTERS"]);
-	CommDKP.ConfigTab1.text:SetScale(1.2)
+	local filterCard = W.CreateCard(CommDKP.ConfigTab1, L["CARDCLASSFILTERS"], 548, 186)
+	filterCard:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 0, 0)
+	CommDKP.ConfigTab1.FilterCard = filterCard
+	local fBody = filterCard.Body
 
 	local checkBtn = {}
 	CommDKP.ConfigTab1.checkBtn = checkBtn;
 
-	-- Create CheckBoxes
+	-- Create CheckBoxes (B6: template-free kit CheckButtons; same table slots, IDs and OnClick handlers)
 	for i=1, 11 do
-		CommDKP.ConfigTab1.checkBtn[i] = CreateFrame("CheckButton", nil, CommDKP.ConfigTab1, "UICheckButtonTemplate");
+		CommDKP.ConfigTab1.checkBtn[i] = W.CreateCheckbox(fBody, nil, "");
 		if i <= 10 then CommDKP.ConfigTab1.checkBtn[i]:SetChecked(true) else CommDKP.ConfigTab1.checkBtn[i]:SetChecked(false) end;
 		CommDKP.ConfigTab1.checkBtn[i]:SetID(i)
 		if i <= 9 then
-			CommDKP.ConfigTab1.checkBtn[i].text:SetText("|cff5151de"..API_CLASSES[core.classes[i]].."|r");
+			CommDKP.ConfigTab1.checkBtn[i].text:SetText(API_CLASSES[core.classes[i]]);
 		end
 		if i==10 then
 			CommDKP.ConfigTab1.checkBtn[i]:SetScript("OnClick",
@@ -326,48 +290,41 @@ function CommDKP:ConfigMenuTabs()
 				end
 			end
 		elseif i==11 then
-			CommDKP.ConfigTab1.checkBtn[i]:SetScript("OnClick", function(self)
-				CommDKP.ConfigTab1.checkBtn[12]:SetChecked(false);
-				CommDKPFilterChecks(self)
-			end)
+			CommDKP.ConfigTab1.checkBtn[i]:SetScript("OnClick", function(self) CommDKP:GroupFilterOnClick(self) end)   -- AD-28.2.1
 		else
 			CommDKP.ConfigTab1.checkBtn[i]:SetScript("OnClick", CommDKPFilterChecks)
 		end
-		CommDKP.ConfigTab1.checkBtn[i].text:SetFontObject("CommDKPSmall")
 	end
 
-	-- Class Check Buttons:
-	CommDKP.ConfigTab1.checkBtn[1]:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 60, -70);
-	CommDKP.ConfigTab1.checkBtn[2]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[1], "TOPRIGHT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[3]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[2], "TOPRIGHT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[4]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[3], "TOPRIGHT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[5]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[4], "TOPRIGHT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[6]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[1], "BOTTOMLEFT", 0, -10);
-	CommDKP.ConfigTab1.checkBtn[7]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[2], "BOTTOMLEFT", 0, -10);
-	CommDKP.ConfigTab1.checkBtn[8]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[3], "BOTTOMLEFT", 0, -10);
-	CommDKP.ConfigTab1.checkBtn[9]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[4], "BOTTOMLEFT", 0, -10);
+	-- §12.3.2 layout: All Classes (row 1) · checkBtn[1..9] in a 3 x 3 grid (col 174, row 24, core.classes order)
+	-- · 1 px rule · In Party/Raid, Online, Not In Raid on one row.
+	local COL, ROW, X0 = 174, 24, W.PAD
+	CommDKP.ConfigTab1.checkBtn[10]:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0, -10);
+	CommDKP.ConfigTab1.checkBtn[10].text:SetText(L["ALLCLASSES"]);
+	for i=1, 9 do
+		CommDKP.ConfigTab1.checkBtn[i]:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0 + ((i-1) % 3) * COL, -34 - math.floor((i-1) / 3) * ROW);
+	end
+	filterCard.Rule = fBody:CreateTexture(nil, "BORDER")
+	filterCard.Rule:SetColorTexture(unpack(core.Palettes.Forever.rule))
+	filterCard.Rule:SetHeight(1)
+	filterCard.Rule:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0, -112)
+	filterCard.Rule:SetPoint("TOPRIGHT", fBody, "TOPRIGHT", -X0, -112)
+	CommDKP.ConfigTab1.checkBtn[11]:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0, -124);
+	CommDKP.ConfigTab1.checkBtn[11].text:SetText(L["INPARTYRAID"]);         -- executed in filterDKPTable (CommunityDKP.lua)
 
-	CommDKP.ConfigTab1.checkBtn[10]:SetPoint("BOTTOMRIGHT", CommDKP.ConfigTab1.checkBtn[3], "TOPLEFT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[10].text:SetText("|cff5151de"..L["ALLCLASSES"].."|r");
-	CommDKP.ConfigTab1.checkBtn[11]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[6], "BOTTOMLEFT", 50, 0);
-	CommDKP.ConfigTab1.checkBtn[11].text:SetText("|cff5151de"..L["INPARTYRAID"].."|r");         -- executed in filterDKPTable (CommunityDKP.lua)
-
-	CommDKP.ConfigTab1.checkBtn[12] = CreateFrame("CheckButton", nil, CommDKP.ConfigTab1, "UICheckButtonTemplate");
+	CommDKP.ConfigTab1.checkBtn[12] = W.CreateCheckbox(fBody, nil, L["ONLINE"]);
 	CommDKP.ConfigTab1.checkBtn[12]:SetID(12)
-	CommDKP.ConfigTab1.checkBtn[12].text:SetText("|cff5151de"..L["ONLINE"].."|r");
-	CommDKP.ConfigTab1.checkBtn[12].text:SetFontObject("CommDKPSmall")
 	CommDKP.ConfigTab1.checkBtn[12]:SetScript("OnClick", CommDKPFilterChecks)
-	CommDKP.ConfigTab1.checkBtn[12]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[11], "TOPRIGHT", 100, 0);
+	CommDKP.ConfigTab1.checkBtn[12]:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0 + COL, -124);
 
-	CommDKP.ConfigTab1.checkBtn[13] = CreateFrame("CheckButton", nil, CommDKP.ConfigTab1, "UICheckButtonTemplate");
+	CommDKP.ConfigTab1.checkBtn[13] = W.CreateCheckbox(fBody, nil, L["NOTINRAIDFILTER"]);
 	CommDKP.ConfigTab1.checkBtn[13]:SetID(13)
-	CommDKP.ConfigTab1.checkBtn[13].text:SetText("|cff5151de"..L["NOTINRAIDFILTER"].."|r");
-	CommDKP.ConfigTab1.checkBtn[13].text:SetFontObject("CommDKPSmall")
-	CommDKP.ConfigTab1.checkBtn[13]:SetScript("OnClick", function(self)
-		CommDKP.ConfigTab1.checkBtn[13]:SetChecked(false);
-		CommDKPFilterChecks(self)
-	end)
-	CommDKP.ConfigTab1.checkBtn[13]:SetPoint("TOPLEFT", CommDKP.ConfigTab1.checkBtn[12], "TOPRIGHT", 65, 0);
+	CommDKP.ConfigTab1.checkBtn[13]:SetScript("OnClick", function(self) CommDKP:GroupFilterOnClick(self) end)   -- AD-28.2.1 (RC-1)
+	CommDKP.ConfigTab1.checkBtn[13]:SetPoint("TOPLEFT", fBody, "TOPLEFT", X0 + 2 * COL, -124);
+
+	-- §12.3.2 Class Distribution card: the class graph is built on its body (ClassGraph.lua reads GraphCard).
+	CommDKP.ConfigTab1.GraphCard = W.CreateCard(CommDKP.ConfigTab1, L["CARDCLASSGRAPH"], 548, 288)
+	CommDKP.ConfigTab1.GraphCard:SetPoint("TOPLEFT", CommDKP.ConfigTab1, "TOPLEFT", 0, -194)
 
 	core.ClassGraph = CommDKP:ClassGraph()  -- draws class graph on tab1
 
@@ -382,60 +339,31 @@ function CommDKP:ConfigMenuTabs()
 	CommDKP:PriceTab_Create()
 
 	---------------------------------------
-	-- Manage DKP TAB
+	-- Manage DKP TAB (§12.3.4: no in-pane heading; the 3 cards are built by ManageEntries)
 	---------------------------------------
-	CommDKP.ConfigTab3.header = CommDKP.ConfigTab3:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab3.header:ClearAllPoints();
-	CommDKP.ConfigTab3.header:SetFontObject("CommDKPLargeCenter");
-	CommDKP.ConfigTab3.header:SetPoint("TOPLEFT", CommDKP.ConfigTab3, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab3.header:SetText(L["MANAGEDKP"]);
-	CommDKP.ConfigTab3.header:SetScale(1.2)
-
-	-- Populate Manage Tab
 	CommDKP:ManageEntries()
 
 	---------------------------------------
-	-- Loot History TAB
+	-- Loot History TAB (§12.3.6): Filter card (0,0) 548 x 71 + Loot Log card (0,-79) 548 x 403 with a scroll region.
 	---------------------------------------
-	CommDKP.ConfigTab5.text = CommDKP.ConfigTab5:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab5.text:ClearAllPoints();
-	CommDKP.ConfigTab5.text:SetFontObject("CommDKPLargeLeft");
-	CommDKP.ConfigTab5.text:SetPoint("TOPLEFT", CommDKP.ConfigTab5, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab5.text:SetText(L["LOOTHISTORY"]);
-	CommDKP.ConfigTab5.text:SetScale(1.2)
-	CommDKP.ConfigTab5.inst = CommDKP.ConfigTab5:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab5.inst:ClearAllPoints();
-	CommDKP.ConfigTab5.inst:SetFontObject("CommDKPSmallRight");
-	CommDKP.ConfigTab5.inst:SetTextColor(0.3, 0.3, 0.3, 0.7)
-	CommDKP.ConfigTab5.inst:SetPoint("TOPRIGHT", CommDKP.ConfigTab5, "TOPRIGHT", -40, -43);
+	CommDKP:CreateHistoryCards(CommDKP.ConfigTab5, L["CARDLOOTLOG"])
 	CommDKP.ConfigTab5.inst:SetText(L["LOOTHISTINST1"]);
-	-- Populate Loot History (LootHistory.lua)
+	-- Populate Loot History (LootHistory.lua). Entries live on the Loot Log scroll content (LogContent).
 	local looter = {}
 	CommDKP.ConfigTab5.looter = looter
 	local lootFrame = {}
 	CommDKP.ConfigTab5.lootFrame = lootFrame
 	for i=1, #CommDKP:GetTable(CommDKP_Loot, true) do
-		CommDKP.ConfigTab5.lootFrame[i] = CreateFrame("Frame", "CommDKPLootHistoryFrame"..i, CommDKP.ConfigTab5);
+		CommDKP.ConfigTab5.lootFrame[i] = CreateFrame("Frame", "CommDKPLootHistoryFrame"..i, CommDKP.ConfigTab5.LogContent);
 	end
 	if #CommDKP:GetTable(CommDKP_Loot, true) > 0 then
 		CommDKP:LootHistory_Update(L["NOFILTER"])
 		CommDKP:CreateSortBox();
 	end
 	---------------------------------------
-	-- DKP History Tab
+	-- DKP History Tab (§12.3.6): Filter card + DKP Log card.
 	---------------------------------------
-	CommDKP.ConfigTab6.text = CommDKP.ConfigTab6:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab6.text:ClearAllPoints();
-	CommDKP.ConfigTab6.text:SetFontObject("CommDKPLargeLeft");
-	CommDKP.ConfigTab6.text:SetPoint("TOPLEFT", CommDKP.ConfigTab6, "TOPLEFT", 15, -10);
-	CommDKP.ConfigTab6.text:SetText(L["DKPHISTORY"]);
-	CommDKP.ConfigTab6.text:SetScale(1.2)
-
-	CommDKP.ConfigTab6.inst = CommDKP.ConfigTab6:CreateFontString(nil, "OVERLAY")
-	CommDKP.ConfigTab6.inst:ClearAllPoints();
-	CommDKP.ConfigTab6.inst:SetFontObject("CommDKPSmallRight");
-	CommDKP.ConfigTab6.inst:SetTextColor(0.3, 0.3, 0.3, 0.7)
-	CommDKP.ConfigTab6.inst:SetPoint("TOPRIGHT", CommDKP.ConfigTab6, "TOPRIGHT", -40, -43);
+	CommDKP:CreateHistoryCards(CommDKP.ConfigTab6, L["CARDDKPLOG"])
 	if #CommDKP:GetTable(CommDKP_DKPHistory, true) > 0 then
 		CommDKP:DKPHistory_Update()
 	end

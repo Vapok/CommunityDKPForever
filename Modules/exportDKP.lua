@@ -3,7 +3,8 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
 
-local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-16.3: selector protocol (FormatDropDown)
+local W = CommDKP.Widgets
 
 local function GenerateDKPTables(table, format)
 	local ExportString;
@@ -189,38 +190,54 @@ end
 
 function CommDKP:ExportBox_Show(text)
     if not CommDKPExportBox then
-        -- UX §10.7: native template window (floater). Drag moves it (helper); a plain click only focuses.
-        local f = CommDKP:CreateForeverWindow("CommDKPExportBox", 700, 600,
-            "CommunityDKP Forever \226\128\148 Export DKP")
+        -- UX §12.4.7 / AD-16.4: "window" chrome (700 x 600, floater, resizable). Format card + Output card + action row,
+        -- all anchored to f.Content (BR-9.4.4). Drag moves it (helper); a plain click only focuses.
+        local f, content = CommDKP:CreateForeverWindow("CommDKPExportBox", 700, 600, "Export DKP")   -- Q9: short title (no locale key exists)
         f:SetPoint("CENTER")
 
-        -- ScrollFrame (inset (14, -10) / (-28, -10); template scrollbar lands inside the inset)
-        local sf = CreateFrame("ScrollFrame", "CommDKPExportBoxScrollFrame", f, "UIPanelScrollFrameTemplate")
-        sf:SetPoint("TOPLEFT", f, "TOPLEFT", 18, -34)
-        sf:SetPoint("TOPRIGHT", f, "TOPRIGHT", -34, -34)
-        sf:SetPoint("BOTTOM", f, "BOTTOM", 0, 160)
+        -- Format card: selector + the format hint caption (the existing description strings).
+        f.FormatCard = W.CreateCard(content, L["CARDFORMAT"], 676, 100)
+        f.FormatCard:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+        f.FormatCard:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
+        local fBody = f.FormatCard.Body
 
         -- Description
-        f.desc = f:CreateFontString(nil, "OVERLAY")
-		f.desc:SetFontObject("CommDKPSmallLeft");
-		f.desc:SetPoint("TOPLEFT", sf, "BOTTOMLEFT", 10, -10);
+        f.desc = W.CreateCaption(fBody, nil, 5)
+        f.desc:SetPoint("TOPLEFT", fBody, "TOPLEFT", 224, -8)   -- AD-21.3.2: width set explicitly by FitFormatCard
 		f.desc:SetText("|CFFAEAEDDExport below one at a time in order. Copy all html and paste into local .html file one after the other. DKP and Loot History often take a few seconds to generate and will lock your screen briefly. As a result they are limited to the most recent 200 entries for each. All tables will be tabbed for convenience.|r");
-		f.desc:SetWidth(math.max(1, sf:GetWidth()-30))   -- re-synced by sf OnSizeChanged once anchors resolve
-        
-        -- EditBox
-        local eb = CreateFrame("EditBox", "CommDKPExportBoxEditBox", CommDKPExportBoxScrollFrame, "BackdropTemplate")
-        eb:SetSize(sf:GetSize())
-        eb:SetMultiLine(true)
-        eb:SetAutoFocus(false) -- dont automatically focus
-        eb:SetFontObject("ChatFontNormal")
+
+        -- Output card: §12.2.6 read-only bg0 well with a thin rail. The EditBox keeps its global name
+        -- (CommDKPExportBoxEditBox) so GenerateDKPTables / Select All write and highlight it exactly as before.
+        f.OutputCard = W.CreateCard(content, L["CARDOUTPUT"], 676, 400)
+        f.OutputCard:SetPoint("TOPLEFT", f.FormatCard, "BOTTOMLEFT", 0, -8)
+        f.OutputCard:SetPoint("BOTTOMRIGHT", content, "BOTTOMRIGHT", 0, W.H + 8)
+        local oBody = f.OutputCard.Body
+        f.Output = W.CreateReadOnlyTextBox(oBody, 646, 360)
+        f.Output:ClearAllPoints()
+        f.Output:SetPoint("TOPLEFT", oBody, "TOPLEFT", 8, -8)
+        f.Output:SetPoint("BOTTOMRIGHT", oBody, "BOTTOMRIGHT", -8, 8)
+        local sf, eb = f.Output.ScrollFrame, f.Output.EditBox
+        _G["CommDKPExportBoxEditBox"] = eb
         eb:SetScript("OnEscapePressed", function() f:Hide() end)
-        sf:SetScrollChild(eb)
 
         -- UX §10.7: width sync tracks live resizing (and fixes the 0x0 read before anchors resolve).
-        sf:SetScript("OnSizeChanged", function(self, w)
-            eb:SetWidth(w)
-            f.desc:SetWidth(w - 30)
+        sf:HookScript("OnSizeChanged", function(self, w)
+            if w and w > 0 then eb:SetWidth(w) end
         end)
+
+        -- AD-21.3.2 (BR-14.2.2): the Format card follows its caption at every width (>= 650) and every format.
+        local FMT_MIN_H, FMT_CHROME_H, DESC_X = 100, 44, 224
+        function f:FitFormatCard()
+            local cardW = self.FormatCard:GetWidth() or 0
+            if cardW < 1 then cardW = (self:GetWidth() or 700) - 24 end   -- content inset 12 + 12 (700 -> 676)
+            self.desc:SetWidth(math.max(1, cardW - 6 - DESC_X - W.PAD))
+            local hc = self.desc.GetStringHeight and self.desc:GetStringHeight() or 0
+            if not hc or hc < 1 then hc = 72 end                         -- fonts not laid out yet: assume 6 caption lines
+            self.FormatCard:SetHeight(math.max(FMT_MIN_H, math.ceil(hc) + FMT_CHROME_H))
+        end
+        f:HookScript("OnSizeChanged", function(self) self:FitFormatCard() end)
+        f:HookScript("OnShow", function(self) self:FitFormatCard() end)
+        f:FitFormatCard()
 
         -- Resizable (12.x: SetMinResize was removed in favor of SetResizeBounds)
         f:SetResizable(true)
@@ -230,11 +247,11 @@ function CommDKP:ExportBox_Show(text)
         local rb = CreateFrame("Button", "CommDKPExportBoxResizeButton", f)
         rb:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -8, 8)
         rb:SetSize(16, 16)
-        
+
         rb:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
         rb:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
         rb:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
-        
+
         rb:SetScript("OnMouseDown", function(self, button)
             if button == "LeftButton" then
                 f:StartSizing("BOTTOMRIGHT")
@@ -246,26 +263,25 @@ function CommDKP:ExportBox_Show(text)
         end)
         f:Show()
 
-        -- Format DROPDOWN box 
+        -- Format DROPDOWN box
         local CurFormat;
 
-		f.FormatDropDown = LibDD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", f);
-		f.FormatDropDown:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 20, 55)
-		LibDD:UIDropDownMenu_SetWidth(f.FormatDropDown, 100)
-		LibDD:UIDropDownMenu_SetText(f.FormatDropDown, "Select Format")
+		f.FormatDropDown = DD:Create_UIDropDownMenu("CommDKPModeSelectDropDown", fBody);
+		f.FormatDropDown:SetPoint("TOPLEFT", fBody, "TOPLEFT", W.PAD, -8)
+		DD:UIDropDownMenu_SetWidth(f.FormatDropDown, 200)
+		DD:UIDropDownMenu_SetText(f.FormatDropDown, "Select Format")
 
 		-- Create and bind the initialization function to the dropdown menu
-			LibDD:UIDropDownMenu_Initialize(f.FormatDropDown, function(self, level, menuList)
-			
-		local Format = LibDD:UIDropDownMenu_CreateInfo()
+			DD:UIDropDownMenu_Initialize(f.FormatDropDown, function(self, level, menuList)
+
+		local Format = DD:UIDropDownMenu_CreateInfo()
 			Format.func = self.SetValue
-			Format.fontObject = "CommDKPSmallCenter"
 			Format.text, Format.arg1, Format.checked, Format.isNotRadio = "HTML", "HTML", "HTML" == CurFormat, false
-			LibDD:UIDropDownMenu_AddButton(Format)
+			DD:UIDropDownMenu_AddButton(Format)
 			Format.text, Format.arg1, Format.checked, Format.isNotRadio = "CSV", "CSV", "CSV" == CurFormat, false
-			LibDD:UIDropDownMenu_AddButton(Format)
+			DD:UIDropDownMenu_AddButton(Format)
 			Format.text, Format.arg1, Format.checked, Format.isNotRadio = "XML", "XML", "XML" == CurFormat, false
-			LibDD:UIDropDownMenu_AddButton(Format)
+			DD:UIDropDownMenu_AddButton(Format)
 		end)
 
 		-- Dropdown Menu Function
@@ -280,8 +296,9 @@ function CommDKP:ExportBox_Show(text)
 			end
 
 			f.desc:SetText(ExportDefinition);
-			LibDD:UIDropDownMenu_SetText(f.FormatDropDown, CurFormat)
-			LibDD:CloseDropDownMenus()
+			f:FitFormatCard()   -- AD-21.3.2 (C-21.1): refit when the caption text changes
+			DD:UIDropDownMenu_SetText(f.FormatDropDown, CurFormat)
+			DD:CloseDropDownMenus()
 		end
 
 		f.FormatDropDown:SetScript("OnEnter", function(self)
@@ -303,28 +320,10 @@ function CommDKP:ExportBox_Show(text)
 			preferredIndex = 3,
 		}
 
-        f.GenerateDKPButton = CommDKP:CreateButton("BOTTOMRIGHT", f, "BOTTOMRIGHT", -355, 20, "1) "..L["GENDKPTABLE"]);
-		f.GenerateDKPButton:SetSize(150, 24)
-		f.GenerateDKPButton:SetScript("OnClick", function()
-			if CurFormat then
-				GenerateDKPTables(CommDKP:GetTable(CommDKP_DKPTable, true), CurFormat)
-			else
-				CommDKP:ShowPopupOverFloaters("NO_FORMAT", CommDKPExportBox)
-			end
-		end)
-
-		f.GenerateDKPHistoryButton = CommDKP:CreateButton("BOTTOMRIGHT", f, "BOTTOMRIGHT", -200, 20, "2) "..L["GENDKPHIST"]);
-		f.GenerateDKPHistoryButton:SetSize(150, 24)
-		f.GenerateDKPHistoryButton:SetScript("OnClick", function()
-			if CurFormat then
-				GenerateDKPTables(CommDKP:GetTable(CommDKP_DKPHistory, true), CurFormat)
-			else
-				CommDKP:ShowPopupOverFloaters("NO_FORMAT", CommDKPExportBox)
-			end
-		end)
-
-		f.GenerateDKPLootButton = CommDKP:CreateButton("BOTTOMRIGHT", f, "BOTTOMRIGHT", -45, 20, "3) "..L["GENLOOTHIST"]);
-		f.GenerateDKPLootButton:SetSize(150, 24)
+		-- Action row: Select All (110, left) · 1) 2) 3) generate buttons (166 each, right-aligned, 8 gap; 1) primary).
+		-- The right edge stays 14 px clear of the resize grabber.
+        f.GenerateDKPLootButton = CommDKP:CreateButton("BOTTOMRIGHT", content, "BOTTOMRIGHT", -14, 0, "3) "..L["GENLOOTHIST"]);
+		f.GenerateDKPLootButton:SetSize(166, W.H)
 		f.GenerateDKPLootButton:SetScript("OnClick", function()
 			if CurFormat then
 				GenerateDKPTables(CommDKP:GetTable(CommDKP_Loot, true), CurFormat)
@@ -333,14 +332,35 @@ function CommDKP:ExportBox_Show(text)
 			end
 		end)
 
-		f.SelectAllButton = CommDKP:CreateButton("BOTTOMLEFT", f, "BOTTOMLEFT", 45, 20, L["SELECTALL"]);
-		f.SelectAllButton:SetSize(100, 20)
+		f.GenerateDKPHistoryButton = CommDKP:CreateButton("RIGHT", f.GenerateDKPLootButton, "LEFT", -8, 0, "2) "..L["GENDKPHIST"]);
+		f.GenerateDKPHistoryButton:SetSize(166, W.H)
+		f.GenerateDKPHistoryButton:SetScript("OnClick", function()
+			if CurFormat then
+				GenerateDKPTables(CommDKP:GetTable(CommDKP_DKPHistory, true), CurFormat)
+			else
+				CommDKP:ShowPopupOverFloaters("NO_FORMAT", CommDKPExportBox)
+			end
+		end)
+
+		f.GenerateDKPButton = CommDKP:CreateButton("RIGHT", f.GenerateDKPHistoryButton, "LEFT", -8, 0, "1) "..L["GENDKPTABLE"]);
+		f.GenerateDKPButton:SetSize(166, W.H)
+		W.StyleButton(f.GenerateDKPButton, "primary")
+		f.GenerateDKPButton:SetScript("OnClick", function()
+			if CurFormat then
+				GenerateDKPTables(CommDKP:GetTable(CommDKP_DKPTable, true), CurFormat)
+			else
+				CommDKP:ShowPopupOverFloaters("NO_FORMAT", CommDKPExportBox)
+			end
+		end)
+
+		f.SelectAllButton = CommDKP:CreateButton("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 0, L["SELECTALL"]);
+		f.SelectAllButton:SetSize(110, W.H)
 		f.SelectAllButton:SetScript("OnClick", function()
 			CommDKPExportBoxEditBox:HighlightText()
 			CommDKPExportBoxEditBox:SetFocus()
 		end)
     end
-    
+
     if text then
         CommDKPExportBoxEditBox:SetText(text)
     end

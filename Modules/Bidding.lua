@@ -3,11 +3,29 @@ local _G = _G;
 local CommDKP = core.CommDKP;
 local CommDKPApi = core.CommDKPApi;
 local L = core.L;
+local W = CommDKP.Widgets
 local LibDD = LibStub:GetLibrary("LibUIDropDownMenu-4.0");
+local DD = CommDKP.DD                     -- AD-19.2 (012b): kit selector protocol for the Boss dropdown
 
 local Bids_Submitted = {};
 local upper = string.upper
-local width, height, numrows = 370, 18, 13
+local width, height, numrows = 352, 18, 13   -- §12.4.3 Bids card: 13 x 18 px rows (352 wide + the rail lane)
+-- AD-22.8.3 (CDKP-015d, BR-084.3/084.4): Bids-table secondary text (rank, row number) = palette textMuted at
+-- full alpha, read at call time so it follows core.Palette. File-local: no Widgets.lua / Core.lua change.
+local MUTED_FALLBACK = { 0.725, 0.655, 0.537, 1 } -- #B9A789 = Core.lua TEXT_MUTED
+local function MutedRGBA()
+  local tm = (core.Palette and core.Palette.textMuted) or MUTED_FALLBACK
+  return tm[1], tm[2], tm[3], 1 -- alpha forced to 1 (BR-084.4: never translucent)
+end
+local function ToByte(v)
+  v = math.floor((tonumber(v) or 0) * 255 + 0.5)
+  if v < 0 then return 0 elseif v > 255 then return 255 end
+  return v
+end
+local function MutedHex() -- Forever/Legacy textMuted -> "|cffb9a789"
+  local r, g, b = MutedRGBA()
+  return string.format("|cff%02x%02x%02x", ToByte(r), ToByte(g), ToByte(b))
+end
 local CurrItemForBid;
 local CurrItemIcon;
 local SelectedBidder = {}
@@ -17,6 +35,7 @@ local timerToggle = 0;
 local mode;
 local events = CreateFrame("Frame", "BiddingEventsFrame");
 local menuFrame = LibDD:Create_UIDropDownMenu("CommDKPBidWindowMenuFrame", UIParent)
+CommDKP.Widgets.RegisterContextMenu(menuFrame) -- CDKP-019 (AD-27.2.3)
 local hookedSlots = {}
 
 function CommDKPApi:SetPriceListApi(api)
@@ -30,6 +49,18 @@ end
 local function UpdateBidWindow()
   core.BiddingWindow.item:SetText(CurrItemForBid)
   core.BiddingWindow.itemIcon:SetTexture(CurrItemIcon)
+end
+
+-- AD-19.2 (012b) / BR-12.10.2: open, new item and Clear Window all reset the Boss dropdown to the last kill.
+-- Read-only: never writes bossargs / core.LastKilledBoss (PM-12.5). bossargs is the persisted source, core.* the fallback.
+local function ResetBiddingBoss()
+  local b = core.BiddingWindow and core.BiddingWindow.boss
+  if not b then return end
+  local args = core.DB and core.DB.bossargs or {}
+  local boss = (args.LastKilledBoss and args.LastKilledBoss ~= "") and args.LastKilledBoss or core.LastKilledBoss
+  local zone = (args.CurrentRaidZone and args.CurrentRaidZone ~= "") and args.CurrentRaidZone or core.CurrentRaidZone
+  b.cdkpZone = zone or ""
+  b:SetText(boss or "")
 end
 
 function CommDKP:BidsSubmitted_Get()
@@ -431,7 +462,10 @@ function CommDKP:ToggleBidWindow(loot, lootIcon, itemName)
 
   if core.IsOfficer then
     
-    core.BiddingWindow = core.BiddingWindow or CommDKP:CreateBidWindow();
+    if not core.BiddingWindow then
+      core.BiddingWindow = CommDKP:CreateBidWindow();
+      ResetBiddingBoss()                         -- AD-19.2 (012b): creation seeds the Boss dropdown (BR-12.10.2)
+    end
 
     if core.DB.bidpos then
        core.BiddingWindow:ClearAllPoints()
@@ -564,7 +598,7 @@ function CommDKP:ToggleBidWindow(loot, lootIcon, itemName)
       core.BiddingWindow.cost:SetText(CommDKP_round(minBid, core.DB.modes.rounding))
       core.BiddingWindow.itemName:SetText(itemName)
       core.BiddingWindow.bidTimer:SetText(core.DB.DKPBonus.BidTimer)
-      core.BiddingWindow.boss:SetText(core.LastKilledBoss)
+      ResetBiddingBoss()
       UpdateBidWindow()
       core.BiddingWindow.ItemTooltipButton:SetSize(core.BiddingWindow.itemIcon:GetWidth() + core.BiddingWindow.item:GetStringWidth() + 10, core.BiddingWindow.item:GetHeight());
       core.BiddingWindow.ItemTooltipButton:SetScript("OnEnter", function(self)
@@ -755,7 +789,7 @@ function CommDKP:ClearBidWindow()
   CommDKP:BidScrollFrame_Update()
   UpdateBidWindow()
   core.BidInProgress = false;
-  core.BiddingWindow.boss:SetText("")
+  ResetBiddingBoss()                           -- BR-12.10.2: Clear Window resets to the last-killed boss
   _G["CommDKPBiddingStartBiddingButton"]:SetText(L["STARTBIDDING"])
   _G["CommDKPBiddingStartBiddingButton"]:SetScript("OnClick", function (self)
     local pass, err = pcall(ToggleTimerBtn, self)
@@ -765,7 +799,6 @@ function CommDKP:ClearBidWindow()
 
     if core.BiddingWindow.minBid then core.BiddingWindow.minBid:ClearFocus(); end
     core.BiddingWindow.bidTimer:ClearFocus()
-    core.BiddingWindow.boss:ClearFocus()
     core.BiddingWindow.cost:ClearFocus()
     if not pass then
       core.BiddingWindow:SetShown(false)
@@ -792,7 +825,7 @@ function CommDKP:ClearBidWindow()
     core.BiddingWindow.maxBid:SetText("")
   end
   for i=1, numrows do
-    core.BiddingWindow.bidTable.Rows[i]:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
+    W.SetRowSelected(core.BiddingWindow.bidTable.Rows[i], false)
   end
 end
 
@@ -925,7 +958,6 @@ function CommDKP:StartBidTimer(seconds, title, itemIcon)
 
           if core.BiddingWindow.minBid then core.BiddingWindow.minBid:ClearFocus(); end
           core.BiddingWindow.bidTimer:ClearFocus()
-          core.BiddingWindow.boss:ClearFocus()
           core.BiddingWindow.cost:ClearFocus()
           if not pass then
             core.BiddingWindow:SetShown(false)
@@ -998,17 +1030,15 @@ function CommDKP:CreateTimer()
   f.border:SetFrameStrata("DIALOG")
   f.border:SetFrameLevel(19)
   f.border:SetSize(300, 25);
-  CommDKP:ApplyBackdrop(f.border, "BorderOnly", "Clear", "WindowBorder")
-  f.timerTitle = f:CreateFontString(nil, "OVERLAY")
-  f.timerTitle:SetFontObject("CommDKPNormalOutlineLeft")
+  CommDKP:ApplyBackdrop(f.border, "Plaque", "Clear", "trimQuiet")   -- AD-16.3 (e) R3: edge only, bar stays visible
+  f.timerTitle = W.CreateText(f, "bodyOutline", nil, "LEFT")
   f.timerTitle:SetWidth(270)
   f.timerTitle:SetHeight(25)
   f.timerTitle:SetTextColor(1, 1, 1, 1);
   f.timerTitle:SetPoint("LEFT", f, "LEFT", 3, 0);
   f.timerTitle:SetText(nil);
 
-  f.timertext = f:CreateFontString(nil, "OVERLAY")
-  f.timertext:SetFontObject("CommDKPSmallOutlineRight")
+  f.timertext = W.CreateText(f, "bodyOutline", nil, "RIGHT")
   f.timertext:SetTextColor(1, 1, 1, 1);
   f.timertext:SetPoint("RIGHT", f, "RIGHT", -5, 0);
   f.timertext:SetText(nil);
@@ -1022,9 +1052,7 @@ function CommDKP:CreateTimer()
   f.OpenBid:SetPoint("RIGHT", f.itemIcon, "LEFT", -5, 0);
   f.OpenBid:SetSize(40,25)
   f.OpenBid:SetText(L["BID"]);
-  f.OpenBid:GetFontString():SetTextColor(1, 1, 1, 1)
-  f.OpenBid:SetNormalFontObject("CommDKPSmallCenter");
-  f.OpenBid:SetHighlightFontObject("CommDKPSmallCenter");
+  W.StyleButton(f.OpenBid)                               -- AD-16.1 (a): kit button only, no re-layout
   f.OpenBid:SetScript("OnClick", function()
     f.OpenBid:Hide()
     CommDKP:BidInterface_Toggle()
@@ -1040,17 +1068,14 @@ local function BidRow_OnClick(self)
   if not player then return end
   if SelectedBidder.player == player then
     for i=1, numrows do
-      core.BiddingWindow.bidTable.Rows[i]:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-      core.BiddingWindow.bidTable.Rows[i]:GetNormalTexture():SetAlpha(0.2)
+      W.SetRowSelected(core.BiddingWindow.bidTable.Rows[i], false)
     end
     SelectedBidder = {}
   else
     for i=1, numrows do
-      core.BiddingWindow.bidTable.Rows[i]:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-      core.BiddingWindow.bidTable.Rows[i]:GetNormalTexture():SetAlpha(0.2)
+      W.SetRowSelected(core.BiddingWindow.bidTable.Rows[i], false)
     end
-      self:SetNormalTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\ListBox-Highlight");
-      self:GetNormalTexture():SetAlpha(0.7)
+      W.SetRowSelected(self, true)
 
       if core.DB.modes.costvalue == "Percent" then
         SelectedBidder = {player=player, dkp=tonumber(self.Strings[3]:GetText())}
@@ -1076,8 +1101,7 @@ local function RightClickMenu(self)
       end
       SelectedBidder = {}
       for i=1, #core.BiddingWindow.bidTable.Rows do
-        core.BiddingWindow.bidTable.Rows[i]:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-        core.BiddingWindow.bidTable.Rows[i]:GetNormalTexture():SetAlpha(0.2)
+        W.SetRowSelected(core.BiddingWindow.bidTable.Rows[i], false)
       end
       CommDKP:BidScrollFrame_Update()
     end },
@@ -1089,25 +1113,22 @@ local function BidWindowCreateRow(parent, id) -- Create 3 buttons for each row i
     local f = CreateFrame("Button", "$parentLine"..id, parent)
     f.Strings = {}
     f:SetSize(width, height)
-    f:SetHighlightTexture("Interface\\AddOns\\CommunityDKPForever\\Media\\Textures\\ListBox-Highlight");
-    f:SetNormalTexture("Interface\\COMMON\\talent-blue-glow")
-    f:GetNormalTexture():SetAlpha(0.2)
+    W.StyleRow(f, id)                    -- §12.2.10 stripe + hover; selection via W.SetRowSelected
     f:SetScript("OnClick", BidRow_OnClick)
     for i=1, 3 do
-        f.Strings[i] = f:CreateFontString(nil, "OVERLAY");
+        f.Strings[i] = W.CreateText(f, "body", nil, i == 1 and "LEFT" or "CENTER")
         f.Strings[i]:SetTextColor(1, 1, 1, 1);
-        if i==1 then
-          f.Strings[i]:SetFontObject("CommDKPNormalLeft");
-        else
-          f.Strings[i]:SetFontObject("CommDKPNormalCenter");
-        end
     end
-    f.Strings[1].rowCounter = f:CreateFontString(nil, "OVERLAY");
-  f.Strings[1].rowCounter:SetFontObject("CommDKPSmallOutlineLeft")
-  f.Strings[1].rowCounter:SetTextColor(1, 1, 1, 0.3);
+    f.Strings[1].rowCounter = W.CreateText(f, "caption", nil, "LEFT")
+  f.Strings[1].rowCounter:SetTextColor(MutedRGBA()) -- AD-22.8.3 (BR-084.4): textMuted, alpha 1 (was white @ 0.3)
   f.Strings[1].rowCounter:SetPoint("LEFT", f, "LEFT", 3, -1);
 
     f.Strings[1]:SetWidth((width/2)-10)
+    -- AD-22.8.2 (CDKP-015d, BR-084.1/084.2): the Player cell is one line and never wraps. With its fixed width the
+    -- engine end-truncates with "...", so the rank (last in the string) is shortened and the name stays whole.
+    if f.Strings[1].SetWordWrap then f.Strings[1]:SetWordWrap(false) end
+    if f.Strings[1].SetNonSpaceWrap then f.Strings[1]:SetNonSpaceWrap(false) end
+    if f.Strings[1].SetMaxLines then f.Strings[1]:SetMaxLines(1) end
     f.Strings[2]:SetWidth(width/4)
     f.Strings[3]:SetWidth(width/4)
     f.Strings[1]:SetPoint("LEFT", f, "LEFT", 20, 0)
@@ -1118,6 +1139,17 @@ local function BidWindowCreateRow(parent, id) -- Create 3 buttons for each row i
       if button == "RightButton" then
         RightClickMenu(self)
       end
+    end)
+
+    -- AD-24.3.1 (CDKP-017, BR-17.1/17.2): the shared Roster history tooltip. self.player is read at hover time (BR-17.5),
+    -- never captured here. W.StyleRow's KeepHooks re-attaches the §12.2.10 hover fill after these SetScripts (F7).
+    f:SetScript("OnEnter", function(self)
+      if self.player and CommDKP.ShowPlayerHistoryTooltip then
+        CommDKP:ShowPlayerHistoryTooltip(self, self.player)
+      end
+    end)
+    f:SetScript("OnLeave", function(self)
+      if GameTooltip:GetOwner() == self then GameTooltip:Hide() end   -- only if this row owns it (handoff, F11)
     end)
 
     return f
@@ -1148,9 +1180,19 @@ function CommDKP:BidScrollFrame_Update()
     end
 
     SortBidTable()
+    local muted = MutedHex() -- AD-22.8.3: read once per refresh (BR-084.3)
+    -- AD-24.3.3 (BR-17.5): remember which bidder row (if any) owns an open tooltip BEFORE the rows are hidden/repainted.
+    local tipRow
+    if GameTooltip:IsShown() then
+      local tipOwner = GameTooltip:GetOwner()
+      for i=1, numrows do
+        if tipOwner and core.BiddingWindow.bidTable.Rows[i] == tipOwner then tipRow = tipOwner; break end
+      end
+    end
     for i=1, numrows do
       row = core.BiddingWindow.bidTable.Rows[i]
       row:Hide()
+      row.player = nil                       -- AD-24.3.2: a hidden row never keeps a stale bidder
     end
     for i=1, showRows do
         row = core.BiddingWindow.bidTable.Rows[i]
@@ -1170,7 +1212,7 @@ function CommDKP:BidScrollFrame_Update()
             row:Show()
             row.index = index
             row.player = entry.player
-            row.Strings[1]:SetText(entry.player.." |cff666666("..rank..")|r")
+            row.Strings[1]:SetText(entry.player.." "..muted.."("..rank..")|r")
             row.Strings[1]:SetTextColor(c.r, c.g, c.b, 1)
             row.Strings[1].rowCounter:SetText(index)
             if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
@@ -1208,6 +1250,13 @@ function CommDKP:BidScrollFrame_Update()
             row:Hide()
         end
     end
+    if tipRow then                                             -- AD-24.3.3
+      if tipRow:IsShown() and tipRow.player then
+        CommDKP:ShowPlayerHistoryTooltip(tipRow, tipRow.player) -- re-render for whoever is NOW on this row
+      else
+        GameTooltip:Hide()                                     -- row emptied (removed / cleared / list shrank)
+      end
+    end
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
       if core.DB.modes.CostSelection == "First Bidder" and Bids_Submitted[1] then
         core.BiddingWindow.cost:SetText(Bids_Submitted[1].bid)
@@ -1236,11 +1285,13 @@ end
 
 function CommDKP:CreateBidWindow()
 
-  local f;
+  local f, content;
 
-  -- UX §10.2: native template window (floater, group "bidding"); the template owns all chrome.
-  f = CommDKP:CreateForeverWindow("CommDKP_BiddingWindow", 400, 524,
-        "CommunityDKP Forever \226\128\148 Bidding", { group = "bidding" })
+  -- UX §12.4.3 / AD-16.4: "window" chrome (floater, group "bidding"). Item card + Auction card + Bids card (with the
+  -- Award footer), all anchored to f.Content (BR-9.4.4). Q9 short title. Height 616 (not 524): the officer table has no
+  -- scrolling, so all 13 bidder rows stay visible (AC-9.10: no functional regression).
+  f, content = CommDKP:CreateForeverWindow("CommDKP_BiddingWindow", 400, 616,
+        "Bidding", { group = "bidding" })   -- no locale key exists
 
   mode = core.DB.modes.mode;
 
@@ -1270,82 +1321,70 @@ function CommDKP:CreateBidWindow()
   end)
 
   if core.IsOfficer then
-    f.bossHeader = f:CreateFontString(nil, "OVERLAY")
-    f.bossHeader:SetFontObject("CommDKPLargeRight");
-    f.bossHeader:SetScale(0.7)
-    f.bossHeader:SetPoint("TOPLEFT", f, "TOPLEFT", 85, -60);
-    f.bossHeader:SetText(L["BOSS"]..":")
+    f.ItemCard = W.CreateCard(content, L["ITEM"], 376, 106)
+    f.ItemCard:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    f.AuctionCard = W.CreateCard(content, L["CARDAUCTION"], 376, 124)
+    f.AuctionCard:SetPoint("TOPLEFT", f.ItemCard, "BOTTOMLEFT", 0, -8)
+    f.BidsCard = W.CreateCard(content, L["BIDS"], 376, 328, { footer = 38 })
+    f.BidsCard:SetPoint("TOPLEFT", f.AuctionCard, "BOTTOMLEFT", 0, -8)
+    local ib, ab, bb, ft = f.ItemCard.Body, f.AuctionCard.Body, f.BidsCard.Body, f.BidsCard.Footer
 
-    f.boss = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-
-    
-    f.boss:SetFontObject("CommDKPNormalLeft");
-    f.boss:SetAutoFocus(false)
-    f.boss:SetMultiLine(false)
-    f.boss:SetTextInsets(10, 15, 5, 5)
-    CommDKP:ApplyBackdrop(f.boss, "TableBorder", "InputBgSoft", "InputBorder")
-    f.boss:SetPoint("LEFT", f.bossHeader, "RIGHT", 9, 0);
-    f.boss:SetSize(200, 28)
-    f.boss:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
-      self:HighlightText(0,0)
-      self:ClearFocus()
-    end)
-    f.boss:SetScript("OnEnterPressed", function(self)    -- clears focus on esc
-      self:HighlightText(0,0)
-      self:ClearFocus()
-    end)
-    f.boss:SetScript("OnTabPressed", function(self)    -- clears focus on esc
-      self:HighlightText(0,0)
-      self:ClearFocus()
-    end)
-
-
-    f.itemHeader = f:CreateFontString(nil, "OVERLAY")
-    f.itemHeader:SetFontObject("CommDKPLargeRight");
-    f.itemHeader:SetScale(0.7)
-    f.itemHeader:SetPoint("TOP", f.bossHeader, "BOTTOM", 0, -25);
-    f.itemHeader:SetText(L["ITEM"]..":")
-
-    f.itemIcon = f:CreateTexture(nil, "OVERLAY", nil);
-    f.itemIcon:SetPoint("LEFT", f.itemHeader, "RIGHT", 8, 0);
+    -- Item card, row 1: ItemIconButton 32 (trimQuiet ring) + the item link in quality color (GameFontNormalLarge)
+    f.itemIcon = ib:CreateTexture(nil, "OVERLAY", nil);
+    f.itemIcon:SetPoint("TOPLEFT", ib, "TOPLEFT", W.PAD, -8);
     f.itemIcon:SetColorTexture(0, 0, 0, 1)
-    f.itemIcon:SetSize(28, 28);
+    f.itemIcon:SetSize(32, 32);
 
-    f.ItemIconButton = CreateFrame("Button", "CommDKPBiddingItemTooltipButtonButton", f)
+    f.ItemIconButton = CreateFrame("Button", "CommDKPBiddingItemTooltipButtonButton", ib)
     f.ItemIconButton:SetPoint("TOPLEFT", f.itemIcon, "TOPLEFT", 0, 0);
-    f.ItemIconButton:SetSize(28, 28);
+    f.ItemIconButton:SetSize(32, 32);
+    f.ItemIconButton.Edges = CommDKP:CreatePixelBorder(f.ItemIconButton, (core.Palette or core.Palettes.Forever).trimQuiet)
 
-    f.item = f:CreateFontString(nil, "OVERLAY")
-    f.item:SetFontObject("CommDKPNormalLeft");
-    f.item:SetPoint("LEFT", f.itemIcon, "RIGHT", 5, 2);
-    f.item:SetSize(200, 28)
+    f.item = W.CreateText(ib, "title", nil, "LEFT")
+    f.item:SetPoint("LEFT", f.itemIcon, "RIGHT", 8, 0);
+    f.item:SetSize(300, 28)
+    if f.item.SetWordWrap then f.item:SetWordWrap(false) end
 
-    f.ItemTooltipButton = CreateFrame("Button", "CommDKPBiddingItemTooltipButtonButton", f)
+    f.ItemTooltipButton = CreateFrame("Button", "CommDKPBiddingItemTooltipButtonButton", ib)
     f.ItemTooltipButton:SetPoint("TOPLEFT", f.itemIcon, "TOPLEFT", 0, 0);
 
-    f.itemName = f:CreateFontString(nil, "OVERLAY")       -- hidden itemName field
-    f.itemName:SetFontObject("CommDKPNormalLeft");
+    f.itemName = W.CreateText(f, "body")       -- hidden itemName field
 
-    f.minBidHeader = f:CreateFontString(nil, "OVERLAY")
-    f.minBidHeader:SetFontObject("CommDKPLargeRight");
-    f.minBidHeader:SetScale(0.7)
-    f.minBidHeader:SetPoint("TOP", f.itemHeader, "BOTTOM", -30, -25);
+    -- Item card, row 2: Boss label + the Boss dropdown (shared Award Confirm menu, AD-19.2 012b), 200 wide
+    f.bossHeader = W.CreateText(ib, "label", L["BOSS"], "LEFT")
+    f.bossHeader:SetPoint("LEFT", ib, "TOPLEFT", W.PAD, -59);
+
+    f.boss = DD:Create_UIDropDownMenu("CommDKPBiddingBossDropDown", ib)      -- kit Forever dropdown (has :SetText/:GetText)
+    f.boss:SetPoint("TOPLEFT", ib, "TOPLEFT", 52, -48)                       -- same footprint as the EditBox (UX §13.6.2)
+    DD:UIDropDownMenu_SetWidth(f.boss, 200)
+    f.bossDropDown = f.boss                                                   -- UX §13.6.2 name alias
+    do  -- AD-19 compat shim: plain SetText(v) keeps the checked mark in sync; the zone is left as is.
+      local rawSetText = f.boss.SetText
+      function f.boss:SetText(v) self.cdkpBoss = v or ""; return rawSetText(self, v or "") end
+    end
+    function f.boss.SetValue(_, newValue, zone)                               -- AD-11.4: never self
+      f.boss.cdkpZone = zone or f.boss.cdkpZone
+      f.boss:SetText(newValue); DD:CloseDropDownMenus()
+    end
+    DD:UIDropDownMenu_Initialize(f.boss, function(self, level, menuList)
+      CommDKP:PopulateBossDropdown(self, level, menuList, f.boss.cdkpBoss, f.boss.cdkpZone)
+    end)
+
+    -- Auction card, row 1: Minimum Bid (60, right) + Custom · at x 180: Maximum Bid (60) + Custom (labels above)
+    f.minBidHeader = W.CreateText(ab, "label", nil, "LEFT")
+    f.minBidHeader:SetPoint("TOPLEFT", ab, "TOPLEFT", W.PAD, -6);
 
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
       -- Min Bid
-      f.minBidHeader:SetText(L["MINIMUMBID"]..": ")
+      f.minBidHeader:SetText(L["MINIMUMBID"])
 
-      f.minBid = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-      
-      f.minBid:SetPoint("LEFT", f.minBidHeader, "RIGHT", 8, 0)
+      f.minBid = CreateFrame("EditBox", nil, ab, "BackdropTemplate")
+
+      f.minBid:SetPoint("TOPLEFT", ab, "TOPLEFT", W.PAD, -20)
       f.minBid:SetAutoFocus(false)
       f.minBid:SetMultiLine(false)
-      f.minBid:SetSize(70, 28)
-      CommDKP:ApplyBackdrop(f.minBid, "TableBorder", "InputBgSoft", "InputBorder")
+      f.minBid:SetSize(60, W.H)
       f.minBid:SetMaxLetters(8)
-      f.minBid:SetTextColor(1, 1, 1, 1)
-      f.minBid:SetFontObject("CommDKPSmallRight")
-      f.minBid:SetTextInsets(10, 10, 5, 5)
       f.minBid.tooltipText = L["MINIMUMBID"];
       f.minBid.tooltipDescription = L["MINBIDTTDESC"]
       f.minBid.tooltipWarning = L["MINBIDTTWARN"]
@@ -1363,15 +1402,11 @@ function CommDKP:CreateBidWindow()
       f.minBid:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
       end)
+      W.StyleEditBox(f.minBid, { numeric = true })
     end
 
-    f.CustomMinBid = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+    f.CustomMinBid = W.CreateCheckbox(ab, nil, L["CUSTOM"]);
     f.CustomMinBid:SetChecked(true)
-    f.CustomMinBid:SetScale(0.6);
-    f.CustomMinBid.text:SetText("  |cff5151de"..L["CUSTOM"].."|r");
-    f.CustomMinBid.text:SetScale(1.5);
-    f.CustomMinBid.text:SetFontObject("CommDKPSmallLeft")
-    f.CustomMinBid.text:SetPoint("LEFT", f.CustomMinBid, "RIGHT", -10, 0)
     f.CustomMinBid:Hide();
     f.CustomMinBid:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
@@ -1386,23 +1421,16 @@ function CommDKP:CreateBidWindow()
 
     -- Max Bid
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
-      f.maxBidHeader = f:CreateFontString(nil, "OVERLAY")
-      f.maxBidHeader:SetFontObject("CommDKPLargeRight");
-      f.maxBidHeader:SetScale(0.7)
-      f.maxBidHeader:SetPoint("TOP", f.minBidHeader, "BOTTOM", -2, -25);
-      f.maxBidHeader:SetText(L["MAXIMUMBID"]..": ")
+      f.maxBidHeader = W.CreateText(ab, "label", L["MAXIMUMBID"], "LEFT")
+      f.maxBidHeader:SetPoint("TOPLEFT", ab, "TOPLEFT", 180, -6);
 
-      f.maxBid = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-          
-      f.maxBid:SetPoint("LEFT", f.maxBidHeader, "RIGHT", 8, 0)
+      f.maxBid = CreateFrame("EditBox", nil, ab, "BackdropTemplate")
+
+      f.maxBid:SetPoint("TOPLEFT", ab, "TOPLEFT", 180, -20)
       f.maxBid:SetAutoFocus(false)
       f.maxBid:SetMultiLine(false)
-      f.maxBid:SetSize(70, 28)
-      CommDKP:ApplyBackdrop(f.maxBid, "TableBorder", "InputBgSoft", "InputBorder")
+      f.maxBid:SetSize(60, W.H)
       f.maxBid:SetMaxLetters(8)
-      f.maxBid:SetTextColor(1, 1, 1, 1)
-      f.maxBid:SetFontObject("CommDKPSmallRight")
-      f.maxBid:SetTextInsets(10, 10, 5, 5)
       f.maxBid.tooltipText = L["MAXIMUMBID"];
       f.maxBid.tooltipDescription = L["MAXBIDTTDESC"]
       f.maxBid.tooltipWarning = L["MAXBIDTTWARN"]
@@ -1420,14 +1448,10 @@ function CommDKP:CreateBidWindow()
       f.maxBid:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
       end)
+      W.StyleEditBox(f.maxBid, { numeric = true })
 
-    f.CustomMaxBid = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+    f.CustomMaxBid = W.CreateCheckbox(ab, nil, L["CUSTOM"]);
     f.CustomMaxBid:SetChecked(core.DB.defaults.CustomMaxBid)
-    f.CustomMaxBid:SetScale(0.6);
-    f.CustomMaxBid.text:SetText("  |cff5151de"..L["CUSTOM"].."|r");
-    f.CustomMaxBid.text:SetScale(1.5);
-    f.CustomMaxBid.text:SetFontObject("CommDKPSmallLeft")
-    f.CustomMaxBid.text:SetPoint("LEFT", f.CustomMaxBid, "RIGHT", -10, 0)
     f.CustomMaxBid:Hide();
     f.CustomMaxBid:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
@@ -1440,28 +1464,17 @@ function CommDKP:CreateBidWindow()
       GameTooltip:Hide()
     end)
   end
-    -- Bid Timer
-    f.bidTimerHeader = f:CreateFontString(nil, "OVERLAY")
-    f.bidTimerHeader:SetFontObject("CommDKPLargeRight");
-    f.bidTimerHeader:SetScale(0.7)
-  if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
-    f.bidTimerHeader:SetPoint("TOP", f.maxBidHeader, "BOTTOM", 13, -25);
-  else
-    f.bidTimerHeader:SetPoint("TOP", f.minBidHeader, "BOTTOM", 13, -25);
-  end
-    f.bidTimerHeader:SetText(L["BIDTIMER"]..": ")
+    -- Auction card, row 2: Bid Timer label + bidTimer (60) + "Seconds" caption · Start Bidding (primary) · Clear Window
+    f.bidTimerHeader = W.CreateText(ab, "label", L["BIDTIMER"], "LEFT")
+    f.bidTimerHeader:SetPoint("TOPLEFT", ab, "TOPLEFT", W.PAD, -52);
 
-    f.bidTimer = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-    
-    f.bidTimer:SetPoint("LEFT", f.bidTimerHeader, "RIGHT", 8, 0)
+    f.bidTimer = CreateFrame("EditBox", nil, ab, "BackdropTemplate")
+
+    f.bidTimer:SetPoint("TOPLEFT", ab, "TOPLEFT", W.PAD, -66)
       f.bidTimer:SetAutoFocus(false)
       f.bidTimer:SetMultiLine(false)
-      f.bidTimer:SetSize(70, 28)
-      CommDKP:ApplyBackdrop(f.bidTimer, "TableBorder", "InputBgSoft", "InputBorder")
+      f.bidTimer:SetSize(60, W.H)
       f.bidTimer:SetMaxLetters(4)
-      f.bidTimer:SetTextColor(1, 1, 1, 1)
-      f.bidTimer:SetFontObject("CommDKPSmallRight")
-      f.bidTimer:SetTextInsets(10, 10, 5, 5)
       f.bidTimer.tooltipText = L["BIDTIMER"];
       f.bidTimer.tooltipDescription = L["BIDTIMERTTDESC"]
       f.bidTimer.tooltipWarning = L["BIDTIMERTTWARN"]
@@ -1488,26 +1501,23 @@ function CommDKP:CreateBidWindow()
     f.bidTimer:SetScript("OnLeave", function(self)
       GameTooltip:Hide()
     end)
+    W.StyleEditBox(f.bidTimer, { numeric = true })
 
-    f.bidTimerFooter = f:CreateFontString(nil, "OVERLAY")
-    f.bidTimerFooter:SetFontObject("CommDKPNormalLeft");
+    f.bidTimerFooter = W.CreateText(ab, "caption", L["SECONDS"], "LEFT", "textMuted")
     f.bidTimerFooter:SetPoint("LEFT", f.bidTimer, "RIGHT", 5, 0);
-    f.bidTimerFooter:SetText(L["SECONDS"])
 
-    f.StartBidding = CreateFrame("Button", "CommDKPBiddingStartBiddingButton", f, "CommunityDKPButtonTemplate")
-    f.StartBidding:SetPoint("TOPRIGHT", f, "TOPRIGHT", -15, -124);   -- UX §10.2: +24 title bar
-    f.StartBidding:SetSize(90, 25);
+    -- B7: the global CommDKPBiddingStartBiddingButton stays the Start/End button; styled primary where it is created.
+    f.StartBidding = CreateFrame("Button", "CommDKPBiddingStartBiddingButton", ab, "CommunityDKPButtonTemplate")
+    f.StartBidding:SetPoint("TOPLEFT", ab, "TOPLEFT", 128, -66);
+    f.StartBidding:SetSize(110, W.H);
     f.StartBidding:SetText(L["STARTBIDDING"]);
-    f.StartBidding:GetFontString():SetTextColor(1, 1, 1, 1)
-    f.StartBidding:SetNormalFontObject("CommDKPSmallCenter");
-    f.StartBidding:SetHighlightFontObject("CommDKPSmallCenter");
+    W.StyleButton(f.StartBidding, "primary")
     f.StartBidding:SetScript("OnClick", function (self)
       local pass, err = pcall(ToggleTimerBtn, self)
 
       if f.minBid then f.minBid:ClearFocus(); end
       if f.maxBid then f.maxBid:ClearFocus(); end
       f.bidTimer:ClearFocus()
-      f.boss:ClearFocus()
       f.cost:ClearFocus()
       if not pass then
         CommDKP:Print(err)
@@ -1538,8 +1548,8 @@ function CommDKP:CreateBidWindow()
       GameTooltip:Hide()
     end)
 
-    f.ClearBidWindow = CommDKP:CreateButton("TOP", f.StartBidding, "BOTTOM", 0, -10, L["CLEARBIDWINDOW"]);
-    f.ClearBidWindow:SetSize(90,25)
+    f.ClearBidWindow = CommDKP:CreateButton("LEFT", f.StartBidding, "RIGHT", 6, 0, L["CLEARBIDWINDOW"]);
+    f.ClearBidWindow:SetSize(110, W.H)
     f.ClearBidWindow:SetScript("OnClick", CommDKP.ClearBidWindow)
     f.ClearBidWindow:SetScript("OnEnter", function(self)
       GameTooltip:SetOwner(self, "ANCHOR_RIGHT");
@@ -1553,20 +1563,20 @@ function CommDKP:CreateBidWindow()
 
 
     --------------------------------------------------
-    -- Bid Table
+    -- Bids card: column strip + the officer table (13 rows, kit rows/selection, region rail). The right-click bidder
+    -- menu stays the stock LibDD CommDKPBidWindowMenuFrame (Q4).
     --------------------------------------------------
-    f.bidTable = CreateFrame("ScrollFrame", "CommDKP_BidWindowTable", f, "BackdropTemplate")
-     
-    f.bidTable:SetSize(width, height*numrows+3)
-    CommDKP:ApplyBackdrop(f.bidTable, "TableBorder", "TableBgSubtle", "TableBorderSubtle")
+    f.bidTable = CreateFrame("ScrollFrame", "CommDKP_BidWindowTable", bb)
+
+    f.bidTable:SetSize(width, height*numrows)
     f.bidTable.ScrollBar = FauxScrollFrame_GetChildFrames(f.bidTable)
 
-      
+
       f.bidTable.Rows = {}
       for i=1, numrows do
           f.bidTable.Rows[i] = BidWindowCreateRow(f.bidTable, i)
           if i==1 then
-            f.bidTable.Rows[i]:SetPoint("TOPLEFT", f.bidTable, "TOPLEFT", 0, -3)
+            f.bidTable.Rows[i]:SetPoint("TOPLEFT", f.bidTable, "TOPLEFT", 0, 0)
           else
             f.bidTable.Rows[i]:SetPoint("TOPLEFT", f.bidTable.Rows[i-1], "BOTTOMLEFT")
           end
@@ -1581,21 +1591,20 @@ function CommDKP:CreateBidWindow()
     local headerButtons = {}
     mode = core.DB.modes.mode;
 
-    f.BidTable_Headers = CreateFrame("Frame", "CommDKPDKPTableHeaders", f, "BackdropTemplate")
-    
-    f.BidTable_Headers:SetSize(370, 22)
-    f.BidTable_Headers:SetPoint("BOTTOMLEFT", f.bidTable, "TOPLEFT", 0, 1)
-    CommDKP:ApplyBackdrop(f.BidTable_Headers, "TableBorder", "HeaderBg", "TableBorder")
-    f.bidTable:SetPoint("TOP", f, "TOP", 0, -229)   -- UX §10.2: +24 title bar
+    f.BidTable_Headers = W.CreateColumnStrip(bb, 20, "CommDKPDKPTableHeaders")
+    f.BidTable_Headers:SetPoint("TOPLEFT", bb, "TOPLEFT", 0, 0)
+    f.BidTable_Headers:SetPoint("TOPRIGHT", bb, "TOPRIGHT", 0, 0)
+    f.bidTable:SetPoint("TOPLEFT", bb, "TOPLEFT", 4, -22)
     f.BidTable_Headers:Show()
+    W.AttachRegionRail(f.bidTable, bb)
 
     headerButtons.player = CreateFrame("Button", "$ParentButtonPlayer", f.BidTable_Headers)
     headerButtons.bid = CreateFrame("Button", "$ParentButtonBid", f.BidTable_Headers)
     headerButtons.dkp = CreateFrame("Button", "$ParentSuttonDkp", f.BidTable_Headers)
 
-    headerButtons.player:SetPoint("LEFT", f.BidTable_Headers, "LEFT", 2, 0)
+    headerButtons.player:SetPoint("LEFT", f.BidTable_Headers, "LEFT", 4, 0)
     headerButtons.bid:SetPoint("LEFT", headerButtons.player, "RIGHT", 0, 0)
-    headerButtons.dkp:SetPoint("RIGHT", f.BidTable_Headers, "RIGHT", -1, 0)
+    headerButtons.dkp:SetPoint("LEFT", headerButtons.bid, "RIGHT", 0, 0)
 
     for k, v in pairs(headerButtons) do
       v:SetHighlightTexture("Interface\\BUTTONS\\BlueGrad64_faded.blp");
@@ -1619,15 +1628,10 @@ function CommDKP:CreateBidWindow()
       end
     end
 
-    headerButtons.player.t = headerButtons.player:CreateFontString(nil, "OVERLAY")
-    headerButtons.player.t:SetFontObject("CommDKPNormalLeft")
-    headerButtons.player.t:SetTextColor(1, 1, 1, 1);
+    headerButtons.player.t = W.CreateText(headerButtons.player, "label", L["PLAYER"], "LEFT")
     headerButtons.player.t:SetPoint("LEFT", headerButtons.player, "LEFT", 20, 0);
-    headerButtons.player.t:SetText(L["PLAYER"]);
 
-    headerButtons.bid.t = headerButtons.bid:CreateFontString(nil, "OVERLAY")
-    headerButtons.bid.t:SetFontObject("CommDKPNormal");
-    headerButtons.bid.t:SetTextColor(1, 1, 1, 1);
+    headerButtons.bid.t = W.CreateText(headerButtons.bid, "label", nil, "CENTER")
     headerButtons.bid.t:SetPoint("CENTER", headerButtons.bid, "CENTER", 0, 0);
 
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
@@ -1638,9 +1642,7 @@ function CommDKP:CreateBidWindow()
       headerButtons.bid.t:SetText(L["PLAYERROLL"])
     end
 
-    headerButtons.dkp.t = headerButtons.dkp:CreateFontString(nil, "OVERLAY")
-    headerButtons.dkp.t:SetFontObject("CommDKPNormal")
-    headerButtons.dkp.t:SetTextColor(1, 1, 1, 1);
+    headerButtons.dkp.t = W.CreateText(headerButtons.dkp, "label", nil, "CENTER")
     headerButtons.dkp.t:SetPoint("CENTER", headerButtons.dkp, "CENTER", 0, 0);
 
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
@@ -1652,20 +1654,16 @@ function CommDKP:CreateBidWindow()
     end
 
       ------------------------------------
-      --  AWARD ITEM
+      --  AWARD ITEM (Bids card footer: 38 px bg2 band, 1 px line rule)
       ------------------------------------
 
-      f.cost = CreateFrame("EditBox", nil, f, "BackdropTemplate")
-      
-    f.cost:SetPoint("TOPLEFT", f.bidTable, "BOTTOMLEFT", 71, -15)
+      f.cost = CreateFrame("EditBox", nil, ft, "BackdropTemplate")
+
+    f.cost:SetPoint("LEFT", ft, "LEFT", 66, 0)
       f.cost:SetAutoFocus(false)
       f.cost:SetMultiLine(false)
-      f.cost:SetSize(70, 28)
-      f.cost:SetTextInsets(10, 10, 5, 5)
-      CommDKP:ApplyBackdrop(f.cost, "TableBorder", "InputBgSoft", "InputBorder")
+      f.cost:SetSize(60, W.H)
       f.cost:SetMaxLetters(8)
-      f.cost:SetTextColor(1, 1, 1, 1)
-      f.cost:SetFontObject("CommDKPSmallRight")
       f.cost:SetScript("OnEscapePressed", function(self)    -- clears focus on esc
         self:ClearFocus()
       end)
@@ -1678,30 +1676,34 @@ function CommDKP:CreateBidWindow()
     f.cost:SetScript("OnLeave", function(self)
       GameTooltip:Hide()
     end)
+    W.StyleEditBox(f.cost, { numeric = true })
 
-    f.costHeader = f:CreateFontString(nil, "OVERLAY")
-    f.costHeader:SetFontObject("CommDKPLargeRight");
-    f.costHeader:SetScale(0.7)
-    f.costHeader:SetPoint("RIGHT", f.cost, "LEFT", -7, 0);
-    f.costHeader:SetText(L["ITEMCOST"]..": ")
+    f.costHeader = W.CreateText(ft, "label", L["ITEMCOST"], "LEFT")
+    f.costHeader:SetPoint("LEFT", ft, "LEFT", W.PAD, 0);
 
     if core.DB.modes.costvalue == "Percent" then
-      f.cost.perc = f.cost:CreateFontString(nil, "OVERLAY")
-      f.cost.perc:SetFontObject("CommDKPNormalLeft");
-      f.cost.perc:SetPoint("LEFT", f.cost, "RIGHT", -15, 1);
-      f.cost.perc:SetText("%")
-      f.cost:SetTextInsets(10, 15, 5, 5)
+      f.cost.perc = W.CreateText(f.cost, "caption", "%", "LEFT", "textMuted")
+      f.cost.perc:SetPoint("LEFT", f.cost, "RIGHT", 3, 0);
     end
 
     if mode == "Minimum Bid Values" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Minimum Bid") then
       f.CustomMinBid:SetPoint("LEFT", f.minBid, "RIGHT", 10, 0);
       f.CustomMaxBid:SetPoint("LEFT", f.maxBid, "RIGHT", 10, 0);
     elseif mode == "Static Item Values" or mode == "Roll Based Bidding" or (mode == "Zero Sum" and core.DB.modes.ZeroSumBidType == "Static") then
+      f.CustomMinBid:SetParent(ft)                        -- it sits next to the cost box in these modes (as today)
       f.CustomMinBid:SetPoint("LEFT", f.cost, "RIGHT", 10, 0);
     end
 
-    f.StartBidding = CommDKP:CreateButton("LEFT", f.cost, "RIGHT", 80, 0, L["AWARDITEM"]);
-    f.StartBidding:SetSize(90,25)
+    f.ItemDE = CommDKP:CreateButton("RIGHT", ft, "RIGHT", -W.PAD, 0, "DE");
+    f.ItemDE:SetSize(34, W.H)
+    f.ItemDE:SetScript("OnClick", function ()
+      CommDKP:ProcessDisenchant(CurrItemForBid)
+    end);
+
+    -- B7: f.StartBidding (the table field only) becomes the Award Item button; styled primary where it is created.
+    f.StartBidding = CommDKP:CreateButton("RIGHT", f.ItemDE, "LEFT", -6, 0, L["AWARDITEM"]);
+    f.StartBidding:SetSize(120, W.H)
+    W.StyleButton(f.StartBidding, "primary")
     f.StartBidding:SetScript("OnClick", function ()  -- confirmation dialog to remove user(s)
       -- CDKP-003 (AD-1/BR-6): awarding is refused, never deferred, during lockdown.
       if CommDKP:IsMessagingRestricted() then
@@ -1722,7 +1724,7 @@ function CommDKP:CreateBidWindow()
           return;
         end
 
-        CommDKP:AwardConfirm(SelectedBidder["player"], tonumber(f.cost:GetText()), f.boss:GetText(), core.DB.bossargs.CurrentRaidZone, CurrItemForBid)
+        CommDKP:AwardConfirm(SelectedBidder["player"], tonumber(f.cost:GetText()), f.boss:GetText(), f.boss.cdkpZone or core.DB.bossargs.CurrentRaidZone, CurrItemForBid)   -- BR-12.10.3
       else
         local selected = L["PLAYERVALIDATE"];
 
@@ -1736,12 +1738,6 @@ function CommDKP:CreateBidWindow()
         }
         CommDKP:ShowPopupOverFloaters("CONFIRM_AWARD", core.BiddingWindow)
       end
-    end);
-
-    f.ItemDE = CommDKP:CreateButton("LEFT", f.cost, "RIGHT", 190, 0, "DE");
-    f.ItemDE:SetSize(35,25)
-    f.ItemDE:SetScript("OnClick", function () 
-      CommDKP:ProcessDisenchant(CurrItemForBid)
     end);
 
     f:SetScript("OnMouseUp", function(self)    -- clears focus on esc

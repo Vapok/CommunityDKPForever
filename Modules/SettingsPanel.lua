@@ -20,13 +20,9 @@ function CommDKP:OpenOptionsTab()
 	if not (CommDKP.UIConfig and CommDKP.UIConfig:IsShown()) then
 		CommDKP:Toggle()
 	end
-	-- The tab menu is collapsed by default; expand it through its own button so ShowState stays in sync.
-	local ui = CommDKP.UIConfig
-	if ui and not core.ShowState and ui.expand and ui.expand.trigger then
-		ui.expand.trigger:Click()
-	end
+	-- UX §11.1.3: forced select expands the workspace (ShowState stays in sync) and never toggles it closed.
 	local tab = _G[OPTIONS_TAB]
-	if tab and tab:IsShown() then tab:Click() end
+	if tab and tab:IsShown() then CommDKP:SelectSideTab(4, true) end
 end
 
 local panel = CreateFrame("Frame")

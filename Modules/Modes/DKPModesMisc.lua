@@ -2,23 +2,24 @@ local _, core = ...;
 local _G = _G;
 local CommDKP = core.CommDKP;
 local L = core.L;
+local W = CommDKP.Widgets
 
+-- UX §12.4.4 Misc pane: 4 cards (456 wide, the pane's right 10 px lane holds the rail), checkboxes in 2 columns.
+local CARD_W, COL2_X = 456, 233
+local function PlaceCheck(cb, card, col, row)
+	cb:SetPoint("TOPLEFT", card.Body, "TOPLEFT", col == 2 and COL2_X or W.PAD, -12 - (row - 1) * 24)
+end
 
 function CommDKP:DKPModes_Misc()
     local f = core.ModesWindow.DKPModesMisc;
 
-    f.AutoAwardContainer = CommDKP:CreateContainer(f, "AutoAwardContainer", L["AUTOAWARD"])
-    f.AutoAwardContainer:SetPoint("TOPLEFT", f, "TOPLEFT", 40, -40)
-    f.AutoAwardContainer:SetSize(175, 50)
+    f.AutoAwardContainer = W.CreateCard(f, L["CARDAUTOAWARD"], CARD_W, 64)
+    f.AutoAwardContainer:SetPoint("TOPLEFT", f, "TOPLEFT", 0, 0)
 
 	    -- AutoAward DKP Checkbox
-		f.AutoAwardContainer.AutoAward = CreateFrame("CheckButton", nil, f.AutoAwardContainer, "UICheckButtonTemplate");
+		f.AutoAwardContainer.AutoAward = W.CreateCheckbox(f.AutoAwardContainer.Body, nil, L["AUTOAWARD"]);
 		f.AutoAwardContainer.AutoAward:SetChecked(core.DB.modes.AutoAward)
-		f.AutoAwardContainer.AutoAward:SetScale(0.6);
-		f.AutoAwardContainer.AutoAward.text:SetText("  |cff5151de"..L["AUTOAWARD"].."|r");
-		f.AutoAwardContainer.AutoAward.text:SetScale(1.5);
-		f.AutoAwardContainer.AutoAward.text:SetFontObject("CommDKPSmallLeft")
-		f.AutoAwardContainer.AutoAward:SetPoint("TOPLEFT", f.AutoAwardContainer, "TOPLEFT", 10, -10);
+		PlaceCheck(f.AutoAwardContainer.AutoAward, f.AutoAwardContainer, 1, 1)
 		f.AutoAwardContainer.AutoAward:SetScript("OnClick", function(self)
 			core.DB.modes.AutoAward = self:GetChecked();
 			if self:GetChecked() == false then
@@ -38,13 +39,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Include Standby Checkbox
-		f.AutoAwardContainer.IncStandby = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.AutoAwardContainer.IncStandby = W.CreateCheckbox(f.AutoAwardContainer.Body, nil, L["INCLUDESTANDBY"]);
 		f.AutoAwardContainer.IncStandby:SetChecked(core.DB.DKPBonus.AutoIncStandby)
-		f.AutoAwardContainer.IncStandby:SetScale(0.6);
-		f.AutoAwardContainer.IncStandby.text:SetText("  |cff5151de"..L["INCLUDESTANDBY"].."|r");
-		f.AutoAwardContainer.IncStandby.text:SetScale(1.5);
-		f.AutoAwardContainer.IncStandby.text:SetFontObject("CommDKPSmallLeft")
-		f.AutoAwardContainer.IncStandby:SetPoint("TOP", f.AutoAwardContainer.AutoAward, "BOTTOM", 0, 0);
+		PlaceCheck(f.AutoAwardContainer.IncStandby, f.AutoAwardContainer, 2, 1)
 		f.AutoAwardContainer.IncStandby:SetScript("OnClick", function(self)
 			core.DB.DKPBonus.AutoIncStandby = self:GetChecked();
 			if self:GetChecked() == true then
@@ -65,18 +62,13 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 	-- Announce Highest Bidder Container
-	f.AnnounceBidContainer = CommDKP:CreateContainer(f, "AnnounceBidContainer", L["HIGHESTBID"])
-    f.AnnounceBidContainer:SetPoint("TOPRIGHT", f, "TOPRIGHT", -50, -40)
-    f.AnnounceBidContainer:SetSize(175, 90)
+	f.AnnounceBidContainer = W.CreateCard(f, L["CARDANNOUNCE"], CARD_W, 88)
+    f.AnnounceBidContainer:SetPoint("TOPLEFT", f.AutoAwardContainer, "BOTTOMLEFT", 0, -8)
 
 		-- Announce Highest Bid
-		f.AnnounceBidContainer.AnnounceBid = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.AnnounceBidContainer.AnnounceBid = W.CreateCheckbox(f.AnnounceBidContainer.Body, nil, L["ANNOUNCEBID"]);
 		f.AnnounceBidContainer.AnnounceBid:SetChecked(core.DB.modes.AnnounceBid)
-		f.AnnounceBidContainer.AnnounceBid:SetScale(0.6);
-		f.AnnounceBidContainer.AnnounceBid.text:SetText("  |cff5151de"..L["ANNOUNCEBID"].."|r");
-		f.AnnounceBidContainer.AnnounceBid.text:SetScale(1.5);
-		f.AnnounceBidContainer.AnnounceBid.text:SetFontObject("CommDKPSmallLeft")
-		f.AnnounceBidContainer.AnnounceBid:SetPoint("TOPLEFT", f.AnnounceBidContainer, "TOPLEFT", 10, -10);
+		PlaceCheck(f.AnnounceBidContainer.AnnounceBid, f.AnnounceBidContainer, 1, 1)
 		f.AnnounceBidContainer.AnnounceBid:SetScript("OnClick", function(self)
 			core.DB.modes.AnnounceBid = self:GetChecked();
 			if self:GetChecked() == false then
@@ -96,13 +88,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Include Name Announce Highest Bid
-		f.AnnounceBidContainer.AnnounceBidName = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.AnnounceBidContainer.AnnounceBidName = W.CreateCheckbox(f.AnnounceBidContainer.Body, nil, L["INCLUDENAME"]);
 		f.AnnounceBidContainer.AnnounceBidName:SetChecked(core.DB.modes.AnnounceBidName)
-		f.AnnounceBidContainer.AnnounceBidName:SetScale(0.6);
-		f.AnnounceBidContainer.AnnounceBidName.text:SetText("  |cff5151de"..L["INCLUDENAME"].."|r");
-		f.AnnounceBidContainer.AnnounceBidName.text:SetScale(1.5);
-		f.AnnounceBidContainer.AnnounceBidName.text:SetFontObject("CommDKPSmallLeft")
-		f.AnnounceBidContainer.AnnounceBidName:SetPoint("TOP", f.AnnounceBidContainer.AnnounceBid, "BOTTOM", 0, 0);
+		PlaceCheck(f.AnnounceBidContainer.AnnounceBidName, f.AnnounceBidContainer, 2, 1)
 		f.AnnounceBidContainer.AnnounceBidName:SetScript("OnClick", function(self)
 			core.DB.modes.AnnounceBidName = self:GetChecked();
 			if self:GetChecked() == true then
@@ -122,13 +110,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Use Raid Warning for Announcements
-		f.AnnounceBidContainer.AnnounceRaidWarning = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.AnnounceBidContainer.AnnounceRaidWarning = W.CreateCheckbox(f.AnnounceBidContainer.Body, nil, L["ANNOUNCEINRAIDWARNING"]);  -- Translate/Localize
 		f.AnnounceBidContainer.AnnounceRaidWarning:SetChecked(core.DB.modes.AnnounceRaidWarning)
-		f.AnnounceBidContainer.AnnounceRaidWarning:SetScale(0.6);
-		f.AnnounceBidContainer.AnnounceRaidWarning.text:SetText("  |cff5151de"..L["ANNOUNCEINRAIDWARNING"].."|r");  -- Translate/Localize
-		f.AnnounceBidContainer.AnnounceRaidWarning.text:SetScale(1.5);
-		f.AnnounceBidContainer.AnnounceRaidWarning.text:SetFontObject("CommDKPSmallLeft")
-		f.AnnounceBidContainer.AnnounceRaidWarning:SetPoint("TOP", f.AnnounceBidContainer.AnnounceBidName, "BOTTOM", 0, 0);
+		PlaceCheck(f.AnnounceBidContainer.AnnounceRaidWarning, f.AnnounceBidContainer, 1, 2)
 		f.AnnounceBidContainer.AnnounceRaidWarning:SetScript("OnClick", function(self)
 			core.DB.modes.AnnounceRaidWarning = self:GetChecked();
 			PlaySound(808);
@@ -144,13 +128,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Decline lower bids
-		f.AnnounceBidContainer.DeclineLowerBids = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.AnnounceBidContainer.DeclineLowerBids = W.CreateCheckbox(f.AnnounceBidContainer.Body, nil, L["DECLINELOWBIDS"]);
 		f.AnnounceBidContainer.DeclineLowerBids:SetChecked(core.DB.modes.DeclineLowerBids)
-		f.AnnounceBidContainer.DeclineLowerBids:SetScale(0.6);
-		f.AnnounceBidContainer.DeclineLowerBids.text:SetText("  |cff5151de"..L["DECLINELOWBIDS"].."|r");
-		f.AnnounceBidContainer.DeclineLowerBids.text:SetScale(1.5);
-		f.AnnounceBidContainer.DeclineLowerBids.text:SetFontObject("CommDKPSmallLeft")
-		f.AnnounceBidContainer.DeclineLowerBids:SetPoint("TOP", f.AnnounceBidContainer.AnnounceRaidWarning, "BOTTOM", 0, 0);
+		PlaceCheck(f.AnnounceBidContainer.DeclineLowerBids, f.AnnounceBidContainer, 2, 2)
 		f.AnnounceBidContainer.DeclineLowerBids:SetScript("OnClick", function(self)
 			core.DB.modes.DeclineLowerBids = self:GetChecked();
 		end)
@@ -165,18 +145,13 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 	--Misc Options Container
-	f.MiscContainer = CommDKP:CreateContainer(f, "MiscContainer", L["MISCSETTINGS"])
-    f.MiscContainer:SetPoint("TOPLEFT", f.AutoAwardContainer, "BOTTOMLEFT", 0, -20)
-    f.MiscContainer:SetSize(175, 90)
+	f.MiscContainer = W.CreateCard(f, L["CARDMISC"], CARD_W, 88)
+    f.MiscContainer:SetPoint("TOPLEFT", f.AnnounceBidContainer, "BOTTOMLEFT", 0, -8)
 
 		-- Standby On Boss Kill Checkbox
-		f.MiscContainer.Standby = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.MiscContainer.Standby = W.CreateCheckbox(f.MiscContainer.Body, nil, L["STANDBYOPTIN"]);
 		f.MiscContainer.Standby:SetChecked(core.DB.modes.StandbyOptIn)
-		f.MiscContainer.Standby:SetScale(0.6);
-		f.MiscContainer.Standby.text:SetText("  |cff5151de"..L["STANDBYOPTIN"].."|r");
-		f.MiscContainer.Standby.text:SetScale(1.5);
-		f.MiscContainer.Standby.text:SetFontObject("CommDKPSmallLeft")
-		f.MiscContainer.Standby:SetPoint("TOPLEFT", f.MiscContainer, "TOPLEFT", 10, -10);
+		PlaceCheck(f.MiscContainer.Standby, f.MiscContainer, 1, 1)
 		f.MiscContainer.Standby:SetScript("OnClick", function(self)
 			core.DB.modes.StandbyOptIn = self:GetChecked();
 			PlaySound(808);
@@ -193,13 +168,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Announce Award to Guild
-		f.MiscContainer.AnnounceAward = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.MiscContainer.AnnounceAward = W.CreateCheckbox(f.MiscContainer.Body, nil, L["ANNOUNCEAWARD"]);
 		f.MiscContainer.AnnounceAward:SetChecked(core.DB.modes.AnnounceAward)
-		f.MiscContainer.AnnounceAward:SetScale(0.6);
-		f.MiscContainer.AnnounceAward.text:SetText("  |cff5151de"..L["ANNOUNCEAWARD"].."|r");
-		f.MiscContainer.AnnounceAward.text:SetScale(1.5);
-		f.MiscContainer.AnnounceAward.text:SetFontObject("CommDKPSmallLeft")
-		f.MiscContainer.AnnounceAward:SetPoint("TOP", f.MiscContainer.Standby, "BOTTOM", 0, 0);
+		PlaceCheck(f.MiscContainer.AnnounceAward, f.MiscContainer, 2, 1)
 		f.MiscContainer.AnnounceAward:SetScript("OnClick", function(self)
 			core.DB.modes.AnnounceAward = self:GetChecked();
 			PlaySound(808);
@@ -215,13 +186,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Broadcast Bid Table to Raid
-		f.MiscContainer.BroadcastBids = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.MiscContainer.BroadcastBids = W.CreateCheckbox(f.MiscContainer.Body, nil, L["BROADCASTBIDS"]);
 		f.MiscContainer.BroadcastBids:SetChecked(core.DB.modes.BroadcastBids)
-		f.MiscContainer.BroadcastBids:SetScale(0.6);
-		f.MiscContainer.BroadcastBids.text:SetText("  |cff5151de"..L["BROADCASTBIDS"].."|r");
-		f.MiscContainer.BroadcastBids.text:SetScale(1.5);
-		f.MiscContainer.BroadcastBids.text:SetFontObject("CommDKPSmallLeft")
-		f.MiscContainer.BroadcastBids:SetPoint("TOP", f.MiscContainer.AnnounceAward, "BOTTOM", 0, 0);
+		PlaceCheck(f.MiscContainer.BroadcastBids, f.MiscContainer, 1, 2)
 		f.MiscContainer.BroadcastBids:SetScript("OnClick", function(self)
 			core.DB.modes.BroadcastBids = self:GetChecked();
 			PlaySound(808);
@@ -237,13 +204,9 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 		-- Log Bids/Rolls
-		f.MiscContainer.StoreBids = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.MiscContainer.StoreBids = W.CreateCheckbox(f.MiscContainer.Body, nil, L["LOGBIDS"]);
 		f.MiscContainer.StoreBids:SetChecked(core.DB.modes.StoreBids)
-		f.MiscContainer.StoreBids:SetScale(0.6);
-		f.MiscContainer.StoreBids.text:SetText("  |cff5151de"..L["LOGBIDS"].."|r");
-		f.MiscContainer.StoreBids.text:SetScale(1.5);
-		f.MiscContainer.StoreBids.text:SetFontObject("CommDKPSmallLeft")
-		f.MiscContainer.StoreBids:SetPoint("TOP", f.MiscContainer.BroadcastBids, "BOTTOM", 0, 0);
+		PlaceCheck(f.MiscContainer.StoreBids, f.MiscContainer, 2, 2)
 		f.MiscContainer.StoreBids:SetScript("OnClick", function(self)
 			core.DB.modes.StoreBids = self:GetChecked();
 			PlaySound(808);
@@ -259,19 +222,14 @@ function CommDKP:DKPModes_Misc()
 		end)
 
 	--DKP Award Options Container
-	f.DKPAwardContainer = CommDKP:CreateContainer(f, "DKPAwardContainer", L["DKPSETTINGS"])
-    f.DKPAwardContainer:SetPoint("TOPLEFT", f.AnnounceBidContainer, "BOTTOMLEFT", 0, -20)
-    f.DKPAwardContainer:SetSize(175, 50)
+	f.DKPAwardContainer = W.CreateCard(f, L["CARDAWARDELIG"], CARD_W, 64)
+    f.DKPAwardContainer:SetPoint("TOPLEFT", f.MiscContainer, "BOTTOMLEFT", 0, -8)
 
     	-- Online Only Checkbox
 	    if core.DB.modes.OnlineOnly == nil then core.DB.modes.OnlineOnly = false end
-		f.DKPAwardContainer.OnlineOnly = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.DKPAwardContainer.OnlineOnly = W.CreateCheckbox(f.DKPAwardContainer.Body, nil, L["ONLINEONLY"]);
 		f.DKPAwardContainer.OnlineOnly:SetChecked(core.DB.modes.OnlineOnly)
-		f.DKPAwardContainer.OnlineOnly:SetScale(0.6);
-		f.DKPAwardContainer.OnlineOnly.text:SetText("  |cff5151de"..L["ONLINEONLY"].."|r");
-		f.DKPAwardContainer.OnlineOnly.text:SetScale(1.5);
-		f.DKPAwardContainer.OnlineOnly.text:SetFontObject("CommDKPSmallLeft")
-		f.DKPAwardContainer.OnlineOnly:SetPoint("TOPLEFT", f.DKPAwardContainer, "TOPLEFT", 10, -10);
+		PlaceCheck(f.DKPAwardContainer.OnlineOnly, f.DKPAwardContainer, 1, 1)
 		f.DKPAwardContainer.OnlineOnly:SetScript("OnClick", function(self)
 			core.DB.modes.OnlineOnly = self:GetChecked();
 			PlaySound(808);
@@ -288,13 +246,9 @@ function CommDKP:DKPModes_Misc()
 
 		-- Same Zone Only Checkbox
 	    if core.DB.modes.SameZoneOnly == nil then core.DB.modes.SameZoneOnly = false end
-		f.DKPAwardContainer.SameZoneOnly = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate");
+		f.DKPAwardContainer.SameZoneOnly = W.CreateCheckbox(f.DKPAwardContainer.Body, nil, L["INZONEONLY"]);
 		f.DKPAwardContainer.SameZoneOnly:SetChecked(core.DB.modes.SameZoneOnly)
-		f.DKPAwardContainer.SameZoneOnly:SetScale(0.6);
-		f.DKPAwardContainer.SameZoneOnly.text:SetText("  |cff5151de"..L["INZONEONLY"].."|r");
-		f.DKPAwardContainer.SameZoneOnly.text:SetScale(1.5);
-		f.DKPAwardContainer.SameZoneOnly.text:SetFontObject("CommDKPSmallLeft")
-		f.DKPAwardContainer.SameZoneOnly:SetPoint("TOP", f.DKPAwardContainer.OnlineOnly, "BOTTOM", 0, 0);
+		PlaceCheck(f.DKPAwardContainer.SameZoneOnly, f.DKPAwardContainer, 2, 1)
 		f.DKPAwardContainer.SameZoneOnly:SetScript("OnClick", function(self)
 			core.DB.modes.SameZoneOnly = self:GetChecked();
 			PlaySound(808);
@@ -308,4 +262,26 @@ function CommDKP:DKPModes_Misc()
 		f.DKPAwardContainer.SameZoneOnly:SetScript("OnLeave", function(self)
 			GameTooltip:Hide()
 		end)
+
+	-- Pane height = the 4 cards + 3 gaps (64 + 88 + 88 + 64 + 24): no empty scroll range below the last card.
+	f:SetHeight(328)
+
+	-- AD-35.6 (BR-27.7, G-27.10): read-only refresh. SetChecked from stored values only: no OnClick, no core.DB write
+	-- (the build-time OnlineOnly/SameZoneOnly nil -> false defaults are NOT repeated here; AC-27.11).
+	function f.RefreshFromDB()
+		local m, b = core.DB.modes or {}, core.DB.DKPBonus or {}
+		local function chk(cb, v) if cb then cb:SetChecked(v == true) end end
+		chk(f.AutoAwardContainer.AutoAward, m.AutoAward)
+		chk(f.AutoAwardContainer.IncStandby, b.AutoIncStandby)
+		chk(f.AnnounceBidContainer.AnnounceBid, m.AnnounceBid)
+		chk(f.AnnounceBidContainer.AnnounceBidName, m.AnnounceBidName)
+		chk(f.AnnounceBidContainer.AnnounceRaidWarning, m.AnnounceRaidWarning)
+		chk(f.AnnounceBidContainer.DeclineLowerBids, m.DeclineLowerBids)
+		chk(f.MiscContainer.Standby, m.StandbyOptIn)
+		chk(f.MiscContainer.AnnounceAward, m.AnnounceAward)
+		chk(f.MiscContainer.BroadcastBids, m.BroadcastBids)
+		chk(f.MiscContainer.StoreBids, m.StoreBids)
+		chk(f.DKPAwardContainer.OnlineOnly, m.OnlineOnly)
+		chk(f.DKPAwardContainer.SameZoneOnly, m.SameZoneOnly)
+	end
 end

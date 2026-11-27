@@ -3,55 +3,27 @@ if GetLocale() == "zhTW" then
   local CommDKP = core.CommDKP;
   
   core.BossList = {
-    MC = {
-      "魯西弗隆", "瑪格曼達", "基赫納斯",
-      "加爾", "迦頓男爵", "沙斯拉爾", "薩弗隆先驅者", 
-      "『焚化者』古雷曼格", "管理者埃克索圖斯", "拉格納羅斯",
+    BARROWDEEPS = {     -- AD-18.2: 10-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Deepscar Matriarch", "Elder Tangleclaw", "Khalith the Dreadspinner", "Well of Sorrow",
+      "Amethrax", "Del'lynar Songwood", "Ravus and Darlissa", "Sonya Darkhallow",
     },
-    BWL = {
-      "狂野的拉佐格爾", "墮落的瓦拉斯塔茲", "幼龍領主勒西雷爾",
-      "費爾默", "埃博諾克", "弗萊格爾", "克洛瑪古斯", 
-      "奈法利安",
-    },
-    AQ = {
-      "預言者斯克拉姆", "戰地衛士沙爾圖拉", "不屈的范克里斯",
-      "哈霍蘭公主", "雙子帝王", "克蘇恩", 
-      "異種蠍皇族", "維希度斯", "奧羅",
-    },
-    NAXX = {
-      "阿努比瑞克漢", "大寡婦費琳娜", "梅克絲娜",
-      "『瘟疫使者』諾斯", "『不潔者』海根", "憎恨者", 
-      "講師拉祖維斯", "『收割者』高希", "四騎士",
-      "縫補者", "葛羅巴斯", "古魯斯", "泰迪斯",
-      "薩菲隆", "科爾蘇加德",
-    },
-    ZG = {
-      "Mandokir 勳爵", "加赫扎蘭卡", "哈克卡爾", "高普瑞特西卡爾", "高優先順序 Venoxis", "高普里斯特斯 - 阿洛克克",
-      "高優先順序 Jeklik", "黑克瑟島", "高普里斯特斯 - 馬爾利", "瘋狂邊緣",
-    },
-    AQ20 = {
-      "『狩獵者』阿亞米斯", "『暴食者』布魯", "拉賈克斯將軍", "庫林納克斯", "莫阿姆", "『無疤者』奧斯里安",
+    HYJALSUMMIT = {     -- AD-18.2: 20-player; IDs in core.EncounterRangeList (no positional IDs)
+      "Bandalar", "Ancient of Decay", "Time-Lost Battalion", "Sylvestris Dusksong", "Old Gloomlurker",
+      "Gharalis the Abyssal", "Kathris the Haunted", "Anara Chillwind", "Elder Minderel", "Tracker Stillwind",
+      "Council of Thorns", "Nythus the Dreambound", "The Wild King",
     },
     ONYXIA = {"奧妮克希亞"},
-    SCARLETENCLAVE = {   -- AD-12.2: IDs 3185, 3187, 3196, 3186, 3197, 3188, 3190, 3189
-      "巴納札爾", "碧翠絲", "野獸大師", "索利史卓莎", "梅森", "重生議會", "莉莉安‧佛斯", "凱爾多蘭",
-    },
     WORLD = {
       "艾索雷苟斯", "卡札克領主", "艾莫莉絲", "雷索", "伊索德雷", "泰拉爾",
       "桑德蘭王子",  -- 3079 (AD-12.2)
     },
   }
-  
+
   core.ZoneList = {
-    "熔火之心", 
-    "黑翼之巢", 
-    "安其拉神廟", 
-    "納克薩瑪斯", 
-    "祖爾格拉布", 
-    "安琪拉遺址", 
+    "The Barrow Deeps",
+    "Hyjal Summit",
     "奧妮西亞的巢穴", 
     "世界老闆",
-    "血色領區",  -- 9 (AD-12.2)
   }
 
   core.L = {
@@ -409,6 +381,7 @@ if GetLocale() == "zhTW" then
     LOOTHISTUPDATEPROG = "戰利品歷史記錄更新中",
     MAINGUISIZE = "主GUI大小",
     MANAGE = "管理",
+    MANAGEDKPROSTER = "Manage DKP Roster", --TODO
     MANAGECORELIST = "管理核心攻略列表",
     MANAGEDKP = "管理 DKP 清單",
     MANAGELISTS = "管理清單",
@@ -489,6 +462,7 @@ if GetLocale() == "zhTW" then
     NORANKSELECTED = "未選擇等級。",
     NOROLEDETECTED = "未檢測到角色",
     NOSPECREPORTED = "沒有規格報告",
+    METAGUILDWARN = "Your spec, role and version could not be sent to the guild (%s). Ask an officer to check that your guild rank is allowed to speak in guild chat.",
     NOTANOFFICER = "不是官員。您只能在行會設置中添加具有“編輯主管注意”權限的等級。",
     NOTETOOLONG = "公會領導人的公開說明過長。註釋截斷以適合DKP表時間戳。 （最多31個字符）",
     NOTIFICATIONSLIKETHIS = "這樣的通知現在",
@@ -687,6 +661,7 @@ if GetLocale() == "zhTW" then
     TABLEQUERYSENT = "查詢公會DKP表狀態",
     TABLEQUERYUTD = "最新",
     TABLESAREEMPTY = "您的表格目前為空。",
+    TABLESEMPTYRECOVERY = "Ask an online officer to broadcast the DKP tables to recover your data.",
     TABLEVIEWS = "表格檢視",
     TAKINGBIDSON = "競標",
     TANK = "坦",
